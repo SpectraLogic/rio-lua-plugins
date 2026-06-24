@@ -1,0 +1,13 @@
+{
+    "runtime.version": "LuaJIT",
+    "diagnostics.globals": [
+        "rio",
+        "input",
+        "input_name",
+        "input_path",
+        "output_path",
+        "plugin_dir",
+        "output_directory",
+        "json"
+    ]
+}
