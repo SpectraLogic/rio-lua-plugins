@@ -11,13 +11,19 @@
 ]]--
 
 local json = assert(loadfile("/Users/jk/sandbox/projects/plugins/lib/dkjson.lua"))()
+---@type RioUtils
 local rio_utils = assert(loadfile("/Users/jk/sandbox/projects/plugins/lib/rio_utils.lua"))()
+---@type MagickPipeline
 local magick_pipeline = assert(loadfile("/Users/jk/sandbox/projects/plugins/lib/magick_pipeline.lua"))()
 
 local FFMPEG = "ffmpeg"
 local FFPROBE = "ffprobe"
 
 
+--- Return the first stream of a given codec_type from an ffprobe streams list.
+---@param streams table[]|nil  ffprobe `streams` array
+---@param codec_type string  e.g. "video" or "audio"
+---@return table|nil  the matching stream, or nil
 local function first_stream(streams, codec_type)
     for _, stream in ipairs(streams or {}) do
         if stream.codec_type == codec_type then
@@ -27,6 +33,10 @@ local function first_stream(streams, codec_type)
     return nil
 end
 
+--- Probe a video with ffprobe for technical metadata.
+---@param video_path string  path to the video file
+---@return table|nil metadata  { format, duration_seconds, file_size_bytes, width, height, video_codec, audio_codec, frame_rate }, or nil on failure
+---@return string? err
 local function get_video_metadata(video_path)
     local cmd = rio_utils.join_command({
         FFPROBE,
@@ -63,6 +73,12 @@ local function get_video_metadata(video_path)
     }
 end
 
+--- Transcode a video to a proxy. The codec is chosen from output_path's extension:
+--- mp4 -> H.264/AAC, webm -> VP9/Opus. Scaled to a max width of 1280.
+---@param input_path string  source video
+---@param output_path string  proxy destination (.mp4 or .webm)
+---@return table|nil metadata  the proxy's video metadata, or nil on failure
+---@return string? err
 local function make_video_proxy(input_path, output_path)
     local extension = rio_utils.get_file_extension(output_path)
     local codec_args
@@ -111,12 +127,17 @@ local function make_video_proxy(input_path, output_path)
     return get_video_metadata(output_path)
 end
 
+--- Extract a single frame from a video and encode it as a thumbnail.
+--- This ffmpeg build has no webp encoder, so ffmpeg extracts + scales the frame
+--- and pipes it as PNG to ImageMagick (which has libwebp) for the final encode.
+--- The output format follows output_path's extension (also works for jpg/png).
+---@param input_path string  source video
+---@param output_path string  thumbnail destination (format from extension)
+---@param time_offset? string|number  seek position in ffmpeg time syntax or seconds (default "00:00:01")
+---@return table|nil metadata  the thumbnail's image metadata, or nil on failure
+---@return string? err
 local function make_video_thumbnail(input_path, output_path, time_offset)
     rio:log_debug("Creating thumbnail for video: " .. tostring(input_path) .. " at : " .. tostring(output_path))
-    -- This ffmpeg build has no webp encoder, so ffmpeg extracts + scales the frame
-    -- and pipes it as PNG to ImageMagick (which has libwebp) for the final encode.
-    -- The output format follows output_path's extension, so this also works for
-    -- jpg/png thumbnails without changing the command.
     local cmd = rio_utils.join_command({
         FFMPEG,
         "-y",
@@ -136,6 +157,13 @@ local function make_video_thumbnail(input_path, output_path, time_offset)
     return magick_pipeline.get_image_metadata(output_path)
 end
 
+--- Extract evenly-spaced sample frames across a video's duration.
+---@param input_path string  source video
+---@param output_stem? string  output filename stem (defaults to the input's stem)
+---@param frame_count? number  number of frames to sample (default 5)
+---@param image_extension? string  frame image extension (default "jpg")
+---@return table[]|nil frames  list of { path, timestamp_seconds, timestamp_label, frame_index }, or nil on failure
+---@return string? err
 local function extract_video_sample_frames(input_path, output_stem, frame_count, image_extension)
     local video_metadata, metadata_err = get_video_metadata(input_path)
     if not video_metadata then
@@ -187,6 +215,10 @@ local function extract_video_sample_frames(input_path, output_stem, frame_count,
     return frame_records
 end
 
+--- Collect tag strings from a frame result, either from a `tags` array or from
+--- sequential ai_tag1..ai_tagN keys.
+---@param item table  a single frame's result table
+---@return string[]  the collected tags
 local function collect_frame_tags(item)
     local tags = {}
 
@@ -208,6 +240,11 @@ local function collect_frame_tags(item)
     return tags
 end
 
+--- Aggregate per-frame AI results into a single metadata map: a representative
+--- description plus the most frequent tags as ai_tagN keys.
+---@param frame_results table[]  per-frame result tables
+---@param max_tags? number  maximum number of tags to keep (default 15)
+---@return table  aggregated metadata { ai_description, ai_tag1, ai_tag2, ... }
 local function aggregate_frame_results(frame_results, max_tags)
     local tag_counts = {}
     local first_seen = {}
@@ -271,6 +308,13 @@ local function aggregate_frame_results(frame_results, max_tags)
     return metadata
 end
 
+---@class FfmpegPipeline
+---@field get_video_metadata fun(video_path: string): table|nil, string? # Probe a video for format/duration/codecs/dimensions.
+---@field make_video_proxy fun(input_path: string, output_path: string): table|nil, string? # Transcode to an mp4 or webm proxy.
+---@field make_video_thumbnail fun(input_path: string, output_path: string, time_offset?: string|number): table|nil, string? # Single-frame video thumbnail.
+---@field extract_video_sample_frames fun(input_path: string, output_stem?: string, frame_count?: number, image_extension?: string): table[]|nil, string? # Evenly-spaced sample frames.
+---@field aggregate_frame_results fun(frame_results: table[], max_tags?: number): table # Combine per-frame AI results into one metadata map.
+
 return {
     get_video_metadata = get_video_metadata,
     make_video_proxy = make_video_proxy,
@@ -278,4 +322,3 @@ return {
     extract_video_sample_frames = extract_video_sample_frames,
     aggregate_frame_results = aggregate_frame_results,
 }
-

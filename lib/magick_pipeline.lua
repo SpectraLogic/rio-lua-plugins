@@ -6,21 +6,26 @@
 --[[
     helper functions for Imagemagick and ghostscript processing in Rio plugin scripts
     REQUIRES: [ImageMagick](https://imagemagick.org) installed and available in the system PATH.
-    REQUIRES (for PDF): [Ghostscript](https://www.ghostscript.com) installed and available in the system PATH. 
+    REQUIRES (for PDF): [Ghostscript](https://www.ghostscript.com) installed and available in the system PATH.
 ]]--
 
 local json = assert(loadfile("/Users/jk/sandbox/projects/plugins/lib/dkjson.lua"))()
+---@type RioUtils
 local rio_utils = assert(loadfile("/Users/jk/sandbox/projects/plugins/lib/rio_utils.lua"))()
 
 local MAGICK = "magick"
 local GS = "gs"
 
+--- Probe an image with `magick identify` for technical metadata.
+---@param image_path string  path to the image file
+---@return table|nil metadata  { format, width, height, resolution_dpi, file_size_bytes }, or nil on failure
+---@return string? err  error message when metadata is nil
 local function get_image_metadata(image_path)
     local cmd = MAGICK .. " identify -format " .. rio_utils.shell_quote("%m|%w|%h|%x|%y|%b") .. " " .. rio_utils.shell_quote(image_path)
     local output = rio_utils.run_command(cmd)
     rio:log_debug("Running command: " .. cmd)
     rio:log_debug("Command output: " .. tostring(output))
-    if not output then 
+    if not output then
         return nil, "magick identify produced no output"
     end
 
@@ -42,6 +47,13 @@ local function get_image_metadata(image_path)
     }
 end
 
+--- Produce a resized, auto-oriented derivative image with ImageMagick.
+---@param input_path string  source image
+---@param output_path string  destination path (output format inferred from its extension)
+---@param resize_geometry string  ImageMagick resize geometry, e.g. "320x320>"
+---@param density_dpi? number  optional output density in DPI
+---@return table|nil metadata  the derivative's image metadata, or nil on failure
+---@return string? err
 local function write_derivative(input_path, output_path, resize_geometry, density_dpi)
     local parts = {}
     for _, part in ipairs({
@@ -65,13 +77,24 @@ local function write_derivative(input_path, output_path, resize_geometry, densit
     return get_image_metadata(output_path)
 end
 
+--- Create a 320x320 (shrink-only) thumbnail of an image.
+---@param image_path string  source image
+---@param output_path string  destination path
+---@return table|nil metadata  the thumbnail's image metadata, or nil on failure
+---@return string? err
 local function make_thumbnail(image_path, output_path)
     return write_derivative(image_path, output_path, "320x320>", 72)
 end
 
--- PDFs need different handling than write_derivative: -density must precede the
--- input to control rasterization quality, the page is selected with [0], and
--- transparency is flattened onto white so it doesn't render black in JPEG.
+--- Render the first page of a PDF to a 320x320 thumbnail.
+--- PDFs need different handling than write_derivative: -density must precede the
+--- input to control rasterization quality, the page is selected with [0], and
+--- transparency is flattened onto white so it doesn't render black in JPEG.
+---@param pdf_path string  source PDF
+---@param output_path string  destination image path (format from extension)
+---@param density_dpi? number  rasterization density in DPI (default 150)
+---@return table|nil metadata  the thumbnail's image metadata, or nil on failure
+---@return string? err
 local function make_pdf_thumbnail(pdf_path, output_path, density_dpi)
     local parts = {
         MAGICK,
@@ -92,7 +115,9 @@ local function make_pdf_thumbnail(pdf_path, output_path, density_dpi)
     return get_image_metadata(output_path)
 end
 
--- Reads the PDF version straight from the file header (e.g. "%PDF-1.7").
+--- Read the PDF version straight from the file header (e.g. "%PDF-1.7").
+---@param pdf_path string
+---@return string|nil  version string like "1.7", or nil if unreadable
 local function read_pdf_version(pdf_path)
     local f = io.open(pdf_path, "rb")
     if not f then return nil end
@@ -101,6 +126,9 @@ local function read_pdf_version(pdf_path)
     return header:match("%%PDF%-([%d%.]+)")
 end
 
+--- Return a file's size in bytes via a seek to end-of-file.
+---@param path string
+---@return number|nil  size in bytes, or nil if unreadable
 local function file_size_bytes(path)
     local f = io.open(path, "rb")
     if not f then return nil end
@@ -109,9 +137,12 @@ local function file_size_bytes(path)
     return size
 end
 
--- Extracts document metadata using ghostscript's bundled pdf_info.ps. Invoked by
--- bare name so gs resolves it on its own lib search path (version-independent).
--- No rasterization, so it's fast even for large PDFs.
+--- Extract PDF document metadata using ghostscript's bundled pdf_info.ps. Invoked
+--- by bare name so gs resolves it on its own lib search path (version-independent).
+--- No rasterization, so it's fast even for large PDFs.
+---@param pdf_path string  source PDF
+---@return table|nil metadata  { format, pdf_version, page_count, title, author, subject, keywords, creator, producer, creation_date, modification_date, file_size_bytes, width_points, height_points }, or nil
+---@return string? err
 local function get_pdf_metadata(pdf_path)
     local cmd = rio_utils.join_command({
         GS, "-q", "-dNODISPLAY", "-dNOSAFER",
@@ -157,10 +188,15 @@ local function get_pdf_metadata(pdf_path)
     return metadata
 end
 
+---@class MagickPipeline
+---@field get_image_metadata fun(image_path: string): table|nil, string? # Probe an image for format/dimensions/dpi/size.
+---@field make_thumbnail fun(image_path: string, output_path: string): table|nil, string? # 320x320 image thumbnail.
+---@field make_pdf_thumbnail fun(pdf_path: string, output_path: string, density_dpi?: number): table|nil, string? # First-page PDF thumbnail.
+---@field get_pdf_metadata fun(pdf_path: string): table|nil, string? # PDF document metadata (title, pages, dimensions, ...).
+
 return {
     get_image_metadata = get_image_metadata,
     make_thumbnail = make_thumbnail,
     make_pdf_thumbnail = make_pdf_thumbnail,
     get_pdf_metadata = get_pdf_metadata,
 }
-

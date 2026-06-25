@@ -17,57 +17,15 @@ Typically, three options are scripted in an AV Pluigin:
 Several methods and parameters are passed in to the script from Rio.
 [Rio methods](docs/rio_methods.md) 
 
-## Sample Script: jpg.lua
+## Available Libraries
+Scripts can use packages in lib.
 
+Note that they need to be imported using loadfile() and not require()
 ```lua
--- load tool-based helpers
-local lib_path = "/Users/jk/sandbox/projects/plugins/lib/"
-local imagemagick_pipeline = = assert(loadfile(lib_path .. "metadata_pipeline.lua"))()
-local metadata_pipeline = assert(loadfile(lib_path .. "metadata_pipeline.lua"))()
-local ollama_describe = loadfile(lib_path .. "ollama_describe")
-local json = assert(loadfile(lib_path .. "dkjson.lua"))()
-
--- make low rez webp thumbnail for jpg
-local image_path = input
-local thumbnail_path = imagemagck_pipeline.create_thumbnail_name(image_path, "webp")
-
-rio:log_info("Processing image: " .. tostring(image_path))
-
--- probe archived object specs; add as metadata
-local technical_metadata, tech_err = metadata_pipeline.get_image_metadata(image_path)
-if not technical_metadata then
-    rio:log_warn("Failed to get technical metadata:" .. tostring(tech_err))
-else
-    rio:log_debug("Technical metadata: " .. json.encode(technical_metadata, { indent = true }))
-end
-
--- create thumbnail and probe fopr metadata
-local thumbnail_meta, thumbnail_err = imagemagick_pipeline.make_thumbnail(image_path, thumbnail_path)
-if not thumbnail_meta then
-    rio:log_error("Failed to create thumbnail:" .. tostring(thumbnail_err))
-    return
-else
-    rio:log_debug("Thumbnail metadata: " .. json.encode(thumbnail_meta, { indent = true }))
-end
-
--- Perform LLM image analysis; add as metadata
-local description, description_err = ollama_describe.describe_image(image_path)
-if not description then
-    print("Failed to describe image:", description_err)
-    return
-else
-   print(json.encode(description, { indent = true }))
-end
-
--- coalesce all the metadata into one object
-local all_metadata = {}
-metadata_pipeline.merge_as_strings(all_metadata, technical_metadata)
-metadata_pipeline.merge_as_strings(all_metadata, thumbnail_meta, "thumbnail_")
-metadata_pipeline.merge_as_strings(all_netadata, description, "ai_")
-rio:log_debug("All metadata: " .. json.encode(all_metadata, { indent = true }))
-
-rio:log_info("Registering thumbnail for image: " .. tostring(thumbnail_path))
-rio:register_thumbnail(thumbnail_path)
-rio:save_metadata(all_metadata)
+local lib_path = plugin_dir .. "/lib/" -- plugin_dir is global
+local rio_utils = assert(loadfile(lib_path .. "rio_utils.lua"))()
 ```
+[Available methods / API](docs/lib-api.md)
 
+## Example Scripts
+Example scripts are located in examples. Note that many could be used for multiple, similar media types. Consider a symbolic link to jpg.lua for png.lua or webm.lua.

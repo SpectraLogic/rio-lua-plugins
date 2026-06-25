@@ -6,12 +6,14 @@
 -- make low rez webp thumbnail for jpg; probe original and thumbnail for metdata.
 
 local lib_path = plugin_dir .. "/lib/"
+---@type RioUtils
 local rio_utils = assert(loadfile(lib_path .. "rio_utils.lua"))()
+---@type MagickPipeline
 local magick_pipeline = assert(loadfile(lib_path .. "magick_pipeline.lua"))()
 -- local ollama_describe = loadfile(lib_path .. "ollama_describe")
 local json = assert(loadfile(lib_path .. "dkjson.lua"))()
 local image_path = input
-local thumbnail_path = rio_utils.create_thumbnail_name(image_path, "webp")
+local thumbnail_path = rio_utils.create_thumbnail_name(image_path, "webp", output_path)
 
 rio:log_info("Processing image: " .. tostring(image_path))
 
