@@ -1,1 +1,9 @@
 .DS_Store
+
+# test scripts and libraries are not checked in 
+# copy into examples/ or lib/ to check in
+work/
+*.lua
+.claude/
+
+test_harness/build/

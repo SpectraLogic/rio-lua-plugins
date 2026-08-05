@@ -6,12 +6,9 @@
 std = "luajit"
 
 read_globals = {
-    "rio",              -- host bridge object (rio:log_info, rio:save_metadata, ...)
+    "rio",              -- host bridge object (rio:log_info, rio:save_techinical_metadata, ...)
     "input",            -- full path to the source file
-    "input_name",       -- documented alias for the source path
-    "input_path",       -- alias used by some runners/plugins
-    "output_path",      -- temp cache dir, cleaned up on completion
-    "pludin_dir",       -- plugin diectory (useful for finding libs and imports)
+    "working_directory",-- output workspace (will be deleted upn successful completion)
+    "settings"          -- config object passed in with user choices
     "output_directory", -- alias used by older plugins
-    "json",             -- some plugins still reference json as a global
 }

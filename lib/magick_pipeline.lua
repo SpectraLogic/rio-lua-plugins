@@ -9,12 +9,25 @@
     REQUIRES (for PDF): [Ghostscript](https://www.ghostscript.com) installed and available in the system PATH.
 ]]--
 
-local json = assert(loadfile("/Users/jk/sandbox/projects/plugins/lib/dkjson.lua"))()
+local json = require("dkjson")
 ---@type RioUtils
-local rio_utils = assert(loadfile("/Users/jk/sandbox/projects/plugins/lib/rio_utils.lua"))()
+local rio_utils = require("rio_utils")
 
 local MAGICK = "magick"
 local GS = "gs"
+
+local function make_options_object(opts)
+    opts = opts or {}
+    return {
+        thumbnail_format = opts.thumbnail_format or "jpg",
+        thumbnail_size = opts.thumbnail_size or "320x180",
+        thumbnail_dpi = tonumber(opts.thumbnail_dpi) or 72,
+        preview_format = opts.preview_format or "jpg",
+        preview_size = opts.preview_size or "960x540",
+        preview_dpi = tonumber(opts.preview_dpi) or 72,
+    }
+end
+
 
 --- Probe an image with `magick identify` for technical metadata.
 ---@param image_path string  path to the image file
@@ -80,10 +93,27 @@ end
 --- Create a 320x320 (shrink-only) thumbnail of an image.
 ---@param image_path string  source image
 ---@param output_path string  destination path
+---@param opts? { thumbnail_size?: string, thumbnail_dpi?: number }
 ---@return table|nil metadata  the thumbnail's image metadata, or nil on failure
 ---@return string? err
-local function make_thumbnail(image_path, output_path)
-    return write_derivative(image_path, output_path, "320x320>", 72)
+local function make_thumbnail(image_path, output_path, opts)
+    opts = opts or {}
+    local size = opts.thumbnail_size or "320x320"
+    local dpi = opts.thumbnail_dpi or 72
+    return write_derivative(image_path, output_path, size, dpi)
+end
+
+--- Create a 1600x1600 (shrink-only) preview of an image.
+---@param image_path string  source image
+---@param output_path string  destination path
+---@param opts? { preview_size?: string, preview_dpi?: number }
+---@return table|nil metadata  the preview's image metadata, or nil on failure
+---@return string? err
+local function make_preview(image_path, output_path, opts)
+    opts = opts or {}
+    local size = opts.preview_size or "1600x1600"
+    local dpi = opts.preview_dpi or 72
+    return write_derivative(image_path, output_path, size, dpi)
 end
 
 --- Render the first page of a PDF to a 320x320 thumbnail.
@@ -92,19 +122,20 @@ end
 --- transparency is flattened onto white so it doesn't render black in JPEG.
 ---@param pdf_path string  source PDF
 ---@param output_path string  destination image path (format from extension)
----@param density_dpi? number  rasterization density in DPI (default 150)
+---@param opts? { thumbnail_size?: string, density_dpi?: number }
 ---@return table|nil metadata  the thumbnail's image metadata, or nil on failure
 ---@return string? err
-local function make_pdf_thumbnail(pdf_path, output_path, density_dpi)
+local function make_pdf_thumbnail(pdf_path, output_path, opts)
+    opts = opts or {}
     local parts = {
         MAGICK,
-        "-density " .. tostring(density_dpi or 150),
+        "-density " .. tostring(opts.density_dpi or 150),
         rio_utils.shell_quote(pdf_path .. "[0]"),
         "-background white",
         "-alpha remove",
         "-auto-orient",
         "-strip",
-        "-thumbnail " .. rio_utils.shell_quote("320x320>"),
+        "-thumbnail " .. rio_utils.shell_quote(opts.thumbnail_size or "320x320"),
         rio_utils.shell_quote(output_path),
     }
 
@@ -191,12 +222,16 @@ end
 ---@class MagickPipeline
 ---@field get_image_metadata fun(image_path: string): table|nil, string? # Probe an image for format/dimensions/dpi/size.
 ---@field make_thumbnail fun(image_path: string, output_path: string): table|nil, string? # 320x320 image thumbnail.
----@field make_pdf_thumbnail fun(pdf_path: string, output_path: string, density_dpi?: number): table|nil, string? # First-page PDF thumbnail.
+---@field make_preview fun(image_path: string, output_path: string): table|nil, string? # 1600x1600 image preview.
+---@field make_pdf_thumbnail fun(pdf_path: string, output_path: string, opts?: { thumbnail_size?: string, density_dpi?: number }): table|nil, string? # First-page PDF thumbnail.
 ---@field get_pdf_metadata fun(pdf_path: string): table|nil, string? # PDF document metadata (title, pages, dimensions, ...).
+---@field make_options_object fun(opts: table?): table # Create a MagickPipeline options object from a config table.
 
 return {
     get_image_metadata = get_image_metadata,
     make_thumbnail = make_thumbnail,
+    make_preview = make_preview,
     make_pdf_thumbnail = make_pdf_thumbnail,
     get_pdf_metadata = get_pdf_metadata,
+    make_options_object = make_options_object,
 }

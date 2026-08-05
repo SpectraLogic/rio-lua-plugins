@@ -1,0 +1,16 @@
+2026-07-14 08:33:20,211 [LuaWorker] avLogger INFO  : LikeSomeoneInLove.mp4: Starting MP4 processing plugin
+2026-07-14 08:33:20,211 [LuaWorker] avLogger INFO  : LikeSomeoneInLove.mp4: Input file: /Users/jk/ipanema/shares/av_plugin_demo/LikeSomeoneInLove.mp4
+2026-07-14 08:33:20,211 [LuaWorker] avLogger INFO  : LikeSomeoneInLove.mp4: ===============================
+2026-07-14 08:33:20,211 [LuaWorker] avLogger INFO  : LikeSomeoneInLove.mp4: ===============================
+2026-07-14 08:33:20,211 [LuaWorker] avLogger INFO  : LikeSomeoneInLove.mp4: ===============================
+2026-07-14 08:33:20,211 [LuaWorker] avLogger INFO  : LikeSomeoneInLove.mp4: ===============================
+2026-07-14 08:33:20,211 [LuaWorker] avLogger INFO  : LikeSomeoneInLove.mp4: ===============================
+2026-07-14 08:33:20,211 [LuaWorker] avLogger INFO  : LikeSomeoneInLove.mp4: ===============================
+2026-07-14 08:33:20,211 [LuaWorker] avLogger INFO  : LikeSomeoneInLove.mp4: ===============================
+2026-07-14 08:33:20,211 [LuaWorker] avLogger INFO  : LikeSomeoneInLove.mp4: ===============================
+2026-07-14 08:33:20,222 [LuaWorker] avLogger DEBUG : LikeSomeoneInLove.mp4: Processing video: /Users/jk/ipanema/shares/av_plugin_demo/LikeSomeoneInLove.mp4 output: /Users/jk/riocache/av-working-248222bd-893e-3000-ae29-eb9b6826a0fd/av-18021582564351724258LikeSomeoneInLove-Proxy.mp4 thumbnail: /Users/jk/riocache/av-working-248222bd-893e-3000-ae29-eb9b6826a0fd/av-18021582564351724258LikeSomeoneInLove-Thumbnail.webp sprite: /Users/jk/riocache/av-working-248222bd-893e-3000-ae29-eb9b6826a0fd/av-18021582564351724258LikeSomeoneInLove-Sprite.webp
+2026-07-14 08:33:20,223 [DefaultDispatcher-worker-2] com.spectralogic.escapepod.postgres.pgsql.PgSql DEBUG : AVStoreImpl.updateQueueById get SQL:
+SELECT a.av_object_id, a.av_object_uuid, a.create_date, b.av_queue_id, b.av_object_id, b.priority, b.attempt, b.create_date, b.current_status_state, b.current_status_text, b.current_status_date
+FROM av_object a
+JOIN av_queue b ON a.av_object_id = b.av_object_id
+WHERE b.av_queue_id = ?

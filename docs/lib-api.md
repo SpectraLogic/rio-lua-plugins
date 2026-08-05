@@ -152,7 +152,7 @@ Join command parts with spaces, dropping nils.
 fun(dst: table, src: table, prefix?: string)
 ```
 
-Copy src into dst, stringifying values (for save_metadata).
+Copy src into dst, stringifying values (for save_techical_metadata).
 
 ## parse_bytes
 
