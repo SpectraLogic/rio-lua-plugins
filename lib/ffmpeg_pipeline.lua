@@ -18,7 +18,6 @@ local magick_pipeline = require("magick_pipeline")
 
 local FFMPEG = "ffmpeg"
 local FFPROBE = "ffprobe"
-local IS_WINDOWS = os.getenv("OS") == "Windows_NT"
 
 
 --- Return the first stream of a given codec_type from an ffprobe streams list.
@@ -89,27 +88,26 @@ local function get_video_metadata(video_path)
         pixel_format = video_stream and video_stream.pix_fmt or nil,
         field_order = video_stream and video_stream.field_order or nil,
         -- MXF / broadcast container metadata (nil for most formats). operational_pattern
-        -- distinguishes OP1a (self-contained) from OP-Atom (split essence); umid links
-        -- related OP-Atom essence files for future pairing.
+        -- distinguishes OP1a (self-contained) from OP-Atom (split essence).
         operational_pattern = tags.operational_pattern_ul,
         start_timecode = tags.timecode,
         umid = tags.material_package_umid,
     }
 end
 
---- Transcode a video to a proxy. The codec is chosen from output_path's extension:
---- mp4 -> H.264/AAC, webm -> VP9/Opus, m3u8 -> HLS single-file. Scaled to max width 1280.
---- For OP-Atom sources, pass opts.extra_audio_inputs (list of mono audio essence paths);
---- they are amerged to stereo via filter_complex.
+--- Build and run the ffmpeg proxy command for a resolved video path plus any
+--- extra audio-only inputs (already known -- no ffprobe classification here).
+--- Shared by make_video_proxy (single file, no extra audio) and
+--- make_op_atom_video_proxy (video path + audio paths already separated).
 ---@param input_path string  source video
+---@param extra_audio string[]  additional mono/stereo audio-only inputs to merge in
 ---@param output_path string  proxy destination (.mp4, .webm, or .m3u8)
----@param opts? { deinterlace?: boolean, extra_audio_inputs?: string[], proxy_format?: string }
+---@param opts? { deinterlace?: boolean, proxy_format?: string }
 ---@return table|nil metadata  the proxy's video metadata, or nil on failure
 ---@return string? err
-local function make_video_proxy(input_path, output_path, opts)
+local function run_proxy_command(input_path, extra_audio, output_path, opts)
     opts = opts or {}
-    local extra_audio = opts.extra_audio_inputs or {}
-    local extension = opts.proxy_format or rio_utils.get_extension(output_path):lower()
+    local extension = opts.proxy_format or rio_utils.get_file_extension(output_path)
 
     -- Deinterlace (yadif) interlaced sources so the progressive proxy has no combing.
     local scale = "scale='min(1280,iw)':-2"
@@ -195,94 +193,105 @@ local function make_video_proxy(input_path, output_path, opts)
     return get_video_metadata(output_path)
 end
 
---- Convert a UMID hex string (e.g. "0x060A2B34...") to the OP-Atom filename convention.
---- OP-Atom essence filenames are the file_package_umid split as 26-6-16-12-4 hex chars
---- joined by hyphens, all lower-case (e.g. "060a2b34...-000000-aabb...-ccdd...-eeff").
----@param umid string  UMID with or without "0x" prefix
----@return string  filename (no directory component)
-local function umid_to_filename(umid)
-    local hex = umid:gsub("^0[xX]", ""):lower()
-    return hex:sub(1,26) .. "-" .. hex:sub(27,32) .. "-" ..
-           hex:sub(33,48) .. "-" .. hex:sub(49,60) .. "-" .. hex:sub(61,64)
+--- Transcode a single self-contained video file to a proxy (normal mp4/mov/mxf
+--- OP1a case -- caller already knows this isn't a split-essence source).
+--- The codec is chosen from output_path's extension: mp4 -> H.264/AAC,
+--- webm -> VP9/Opus, m3u8 -> HLS single-file. Scaled to max width 1280.
+---@param input_path string  source video
+---@param output_path string  proxy destination (.mp4, .webm, or .m3u8)
+---@param opts? { deinterlace?: boolean, proxy_format?: string }
+---@return table|nil metadata  the proxy's video metadata, or nil on failure
+---@return string? err
+local function make_video_proxy(input_path, output_path, opts)
+    return run_proxy_command(input_path, {}, output_path, opts)
 end
 
---- Find OP-Atom audio essence files for a video essence file.
---- Primary strategy: read the video file's Data stream tags to get the exact
---- file_package_umid of each referenced audio file, then derive filenames directly.
---- Fallback (e.g. if the video codec prevents ffprobe JSON output): probe every
---- file in the directory and keep those with audio-only streams.
----@param video_path string  path to the OP-Atom video essence file
----@return string[]  sorted list of audio essence file paths (empty if none found)
-local function find_op_atom_audio_files(video_path)
-    local sep = IS_WINDOWS and "\\" or "/"
-    local dir = video_path:match("(.*)[/\\][^/\\]+$") or "."
-
-    -- Primary: derive filenames from Data-stream UMIDs in the video file.
-    -- This is faster (one probe) and precise — each video only references its own
-    -- paired audio, so multi-quality sets (HD + proxy) stay correctly separated.
-    local cmd = rio_utils.join_command({
-        FFPROBE, "-v quiet", "-print_format json", "-show_streams",
-        rio_utils.shell_quote(video_path),
-    })
-    local probe_output = rio_utils.run_command(cmd)
-    if probe_output then
-        local probe_json = (json.decode(probe_output))
-        if probe_json and probe_json.streams then
-            local audio_files = {}
-            for _, stream in ipairs(probe_json.streams) do
-                local tags = stream.tags or {}
-                if tags.data_type == "audio" and tags.file_package_umid then
-                    local filename = umid_to_filename(tags.file_package_umid)
-                    local full_path = dir .. sep .. filename
-                    if rio_utils.file_exists(full_path) then
-                        audio_files[#audio_files + 1] = full_path
-                    else
-                        rio:log_warn("OP-Atom: referenced audio file not found: " .. full_path)
-                    end
-                end
-            end
-            if #audio_files > 0 then
-                table.sort(audio_files)
-                return audio_files
-            end
-        end
+--- Interrogate an array of related OP-Atom essence file paths by probing each
+--- with ffprobe: the one path carrying a video stream is the video essence,
+--- and any audio-only paths (its paired mono/stereo audio essence) are
+--- collected separately. Rio hands over the full related-file set directly,
+--- so no directory scanning or UMID-based filename derivation is needed.
+--- A path that fails to probe (corrupt essence, unrelated sidecar file, etc.)
+--- is logged and skipped rather than aborting the whole package -- only the
+--- absence of any video essence at all is a hard failure.
+---@param paths string[]  array of related essence paths for one OP-Atom package
+---@return string|nil video_path  the path with a video stream
+---@return string[] audio_paths  audio-only paths, in input order
+---@return string? err
+local function resolve_essence_paths(paths)
+    if #(paths or {}) == 0 then
+        return nil, {}, "No input paths provided"
     end
 
-    -- Fallback: probe every sibling file and keep audio-only ones.
-    -- Used when the video codec prevents ffprobe from producing valid JSON.
-    rio:log_warn("find_op_atom_audio_files: UMID lookup failed for " .. video_path
-        .. "; falling back to directory scan")
-
-    local list_cmd = IS_WINDOWS
-        and ("dir /b " .. rio_utils.shell_quote(dir))
-        or  ("ls -1 " .. rio_utils.shell_quote(dir))
-
-    local file_list = rio_utils.run_command(list_cmd)
-    if not file_list then
-        rio:log_warn("find_op_atom_audio_files: could not list directory: " .. dir)
-        return {}
-    end
-
-    local audio_files = {}
-    for filename in file_list:gmatch("[^\n\r]+") do
-        filename = rio_utils.trim(filename)
-        if filename == "" then goto continue end
-
-        local full_path = dir .. sep .. filename
-        if full_path == video_path or filename:lower():match("%.aaf$") then
+    local video_path, audio_paths = nil, {}
+    for _, path in ipairs(paths) do
+        local meta, err = get_video_metadata(path)
+        if not meta then
+            rio:log_warn("resolve_essence_paths: skipping unprobeable input '" .. tostring(path) .. "': " .. tostring(err))
             goto continue
         end
 
-        local meta = get_video_metadata(full_path)
-        if meta and meta.audio_codec and not meta.width then
-            audio_files[#audio_files + 1] = full_path
+        if meta.width then
+            if video_path then
+                rio:log_warn("resolve_essence_paths: multiple video-bearing inputs; using first: " .. video_path)
+            else
+                video_path = path
+            end
+        elseif meta.audio_codec then
+            audio_paths[#audio_paths + 1] = path
+        else
+            rio:log_warn("resolve_essence_paths: input has neither video nor audio stream: " .. path)
         end
 
         ::continue::
     end
 
-    table.sort(audio_files)
-    return audio_files
+    if not video_path then
+        return nil, {}, "No video essence found among inputs"
+    end
+
+    return video_path, audio_paths, nil
+end
+
+--- Probe an OP-Atom package's related essence files and report metadata for
+--- the video essence. Since the video essence itself carries no audio in a
+--- split-essence source, audio_codec is filled in from the first paired
+--- audio-only essence.
+---@param paths string[]  array of related essence paths for one OP-Atom package
+---@return table|nil metadata  see get_video_metadata, or nil on failure
+---@return string? err
+local function get_op_atom_video_metadata(paths)
+    local video_path, audio_paths, resolve_err = resolve_essence_paths(paths)
+    if not video_path then
+        return nil, resolve_err
+    end
+
+    local metadata, meta_err = get_video_metadata(video_path)
+    if metadata and not metadata.audio_codec and #audio_paths > 0 then
+        local audio_meta = get_video_metadata(audio_paths[1])
+        if audio_meta then
+            metadata.audio_codec = audio_meta.audio_codec
+        end
+    end
+
+    return metadata, meta_err
+end
+
+--- Transcode an OP-Atom package (video essence + separate mono/stereo audio
+--- essence files) to a proxy. paths is classified via resolve_essence_paths,
+--- then the audio-only essence is merged to stereo via filter_complex.
+---@param paths string[]  array of related essence paths for one OP-Atom package
+---@param output_path string  proxy destination (.mp4, .webm, or .m3u8)
+---@param opts? { deinterlace?: boolean, proxy_format?: string }
+---@return table|nil metadata  the proxy's video metadata, or nil on failure
+---@return string? err
+local function make_op_atom_video_proxy(paths, output_path, opts)
+    local video_path, audio_paths, resolve_err = resolve_essence_paths(paths)
+    if not video_path then
+        return nil, resolve_err
+    end
+
+    return run_proxy_command(video_path, audio_paths, output_path, opts)
 end
 
 --- Extract a single frame from a video and encode it as a thumbnail.
@@ -534,22 +543,26 @@ end
 
 
 ---@class FfmpegPipeline
----@field get_video_metadata fun(video_path: string): table|nil, string? # Probe a video for format/duration/codecs/dimensions.
----@field make_video_proxy fun(input_path: string, output_path: string, opts?: table): table|nil, string? # Transcode to an mp4, webm, or m3u8 proxy.
+---@field get_video_metadata fun(video_path: string): table|nil, string? # Probe a single video file for format/duration/codecs/dimensions.
+---@field make_video_proxy fun(input_path: string, output_path: string, opts?: table): table|nil, string? # Transcode a single self-contained video file to an mp4, webm, or m3u8 proxy.
+---@field get_op_atom_video_metadata fun(paths: string[]): table|nil, string? # Probe an OP-Atom package's related essence files for the video essence's metadata (audio_codec backfilled from paired audio).
+---@field make_op_atom_video_proxy fun(paths: string[], output_path: string, opts?: table): table|nil, string? # Transcode an OP-Atom package (video essence + separate audio essence files) to a proxy.
+---@field resolve_essence_paths fun(paths: string[]): string|nil, string[], string? # Classify an OP-Atom package's essence paths into a video path and audio-only paths.
 ---@field make_video_thumbnail fun(input_path: string, output_path: string, time_offset?: string|number): table|nil, string? # Single-frame video thumbnail.
 ---@field extract_video_sample_frames fun(input_path: string, output_stem?: string, opts?: table): table[]|nil, string? # Evenly-spaced sample frames.
 ---@field aggregate_frame_results fun(frame_results: table[], max_tags?: number): table # Combine per-frame AI results into one metadata map.
 ---@field make_video_sidecar fun(input_path: string, output_path: string, duration_seconds?: number): boolean|nil, string? # Create a 7x7 sprite sheet of frames from a video.
----@field find_op_atom_audio_files fun(video_path: string): string[] # Find OP-Atom audio essence files in the same directory as a video essence file.
 ---@field make_options_object fun(opts?: table): table # Create a defaulted options object for ffmpeg_pipeline functions.
 return {
     get_video_metadata = get_video_metadata,
     make_video_proxy = make_video_proxy,
+    get_op_atom_video_metadata = get_op_atom_video_metadata,
+    make_op_atom_video_proxy = make_op_atom_video_proxy,
+    resolve_essence_paths = resolve_essence_paths,
     make_video_thumbnail = make_video_thumbnail,
     extract_video_sample_frames = extract_video_sample_frames,
     aggregate_frame_results = aggregate_frame_results,
     make_video_sidecar = make_video_sidecar,
-    find_op_atom_audio_files = find_op_atom_audio_files,
     make_options_object = make_options_object,
 }
 

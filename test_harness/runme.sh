@@ -13,10 +13,14 @@ fi
 script="$1"
 input="$2"
 output="${3:-$HOME/proxy/lua-output}"
-settings="$4"
+clip_dir="$4"
+if [ -n "$clip_dir" ]; then
+    clip_opt="-DluaClip=$clip_dir"
+fi
+settings="$5"
 settings_opt=""
 if [ -n "$settings" ]; then
     settings_opt="-DluaSettings=$settings"
 fi
-exec java -DluaInput="$input" -DluaOutput="$output" $settings_opt \
+exec java -DluaInput="$input" -DluaOutput="$output" $settings_opt $clip_opt \
      -jar build/libs/plugin_test_harness-all.jar "$script"

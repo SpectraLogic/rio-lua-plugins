@@ -37,9 +37,10 @@ fun main(args: Array<String>) {
 
     val inputPath = workDir.resolve("source-input").resolve(System.getProperty("luaInput") ?: "test.jpg").toString()
     val outputPath = System.getProperty("luaOutput") ?: workDir.resolve("proxy-output").toString()
+    val clipPath = workDir.resolve(System.getProperty("luaClip") ?: "clip-input")
     Files.createDirectories(Paths.get(outputPath))
     val inputFileName = Paths.get(inputPath).fileName.toString()
-    val bridge = PluginBridge(inputFileName, logger)
+    val bridge = PluginBridge(inputFileName, logger, clipPath.toString())
 
     val globals = JsePlatform.standardGlobals()
     globals.set("rio", CoerceJavaToLua.coerce(bridge))

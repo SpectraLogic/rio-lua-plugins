@@ -6,3 +6,6 @@ work/
 .claude/
 
 test_harness/build/
+test_harness/.gradle/
+test_harness/.kotlin/
+test_harness/settings-overrides.json

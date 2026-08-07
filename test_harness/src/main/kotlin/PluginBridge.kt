@@ -20,6 +20,7 @@ import java.time.Duration
 class PluginBridge(
     private val fileName: String,
     private val logger: Logger,
+    private val clipPath: String,
 ) {
     private val httpClient: HttpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(30))
@@ -28,6 +29,26 @@ class PluginBridge(
     fun gpu_exec(command: String): Int {
         logger.info("[mock gpu_exec] $command")
         return 0
+    }
+
+    // Mocks the OP-Atom case: Rio hands the plugin every essence file belonging to
+    // one archived object. Here that's just every regular file directly under the
+    // -DluaClip directory (default clip-input/), sorted for a deterministic order.
+    fun get_object_files(): LuaTable {
+        val dir = File(clipPath)
+        val files = dir.listFiles()
+            ?.filter { it.isFile }
+            ?.map { it.absolutePath }
+            ?.sorted()
+            ?: emptyList()
+
+        if (files.isEmpty()) {
+            logger.warn("[mock get_object_files] no files found in $clipPath")
+        }
+
+        val t = LuaTable()
+        files.forEachIndexed { i, path -> t.set(i + 1, LuaValue.valueOf(path)) }
+        return t
     }
 
     fun save_ai_metadata(metadata: LuaValue) {
