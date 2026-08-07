@@ -35,6 +35,8 @@ tasks.register<JavaExec>("runLua") {
     if (outputArg != null) systemProperty("luaOutput", outputArg)
     val settingsArg = providers.gradleProperty("luaSettings").orNull
     if (settingsArg != null) systemProperty("luaSettings", settingsArg)
+    val clipArg = providers.gradleProperty("luaClip").orNull
+    if (clipArg != null) systemProperty("luaClip", clipArg)
     environment("PATH", "/opt/homebrew/bin:" + System.getenv("PATH"))
     standardInput = System.`in`
 }

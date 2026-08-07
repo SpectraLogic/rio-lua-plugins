@@ -66,10 +66,10 @@ end
 
 A form will be rendered in the Rio interface under Plugins
 
-The values set by the user are passed in to execute() as a Map
+The values set by the user are passed in to execute() as a Map named settings
 ```lua
-function plugin.execute(config)
-    rio:log_info("Executing plugin version: " .. tostring(config.version))
+function plugin.execute()
+    rio:log_info("Executing plugin using: " .. tostring(settings.s3_bucket))
 end
 ```
 
