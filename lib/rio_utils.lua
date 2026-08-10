@@ -249,6 +249,86 @@ local function merge_as_strings(dst, src, prefix)
     end
 end
 
+--- Coerce a value that behaves like a list into a real 1-based Lua array.
+--- The rio bridge can hand back a list-shaped value in three different forms
+--- depending on the underlying Java type, and each needs a different access
+--- pattern:
+---   1. a genuine Lua table -- returned as-is (also covers the test harness,
+---      which always builds a real LuaTable).
+---   2. a java.util.List/Collection bridged in as userdata -- has no # or []
+---      support at all, but exposes its Java methods as Lua method calls:
+---      value:size() and value:get(i) (0-based).
+---   3. a Java array (or similar) bridged in as userdata that *does* support
+---      # and 1-based [] via metamethods.
+--- Every access is pcall-guarded, so an unrecognized shape degrades to an
+--- empty array instead of throwing.
+---@param value any
+---@return table array  a genuine 1-based Lua array (empty if value couldn't be read)
+---@return number count
+local function to_array(value)
+    if type(value) == "table" then
+        return value, #value
+    end
+
+    local size_ok, size = pcall(function() return value:size() end)
+    if size_ok and type(size) == "number" then
+        local array = {}
+        for i = 1, size do
+            local ok, item = pcall(function() return value:get(i - 1) end)
+            array[i] = ok and item or nil
+        end
+        return array, size
+    end
+
+    local len_ok, len = pcall(function() return #value end)
+    if len_ok and type(len) == "number" and len > 0 then
+        local array = {}
+        for i = 1, len do
+            local ok, item = pcall(function() return value[i] end)
+            array[i] = ok and item or nil
+        end
+        return array, len
+    end
+
+    return {}, 0
+end
+
+--- Safely describe a value for debug logging: its Lua type, plus its contents
+--- if it behaves like a table or list. Never throws -- values coming from the
+--- rio bridge (settings, rio:get_object_files(), etc.) can arrive as userdata
+--- wrapping a Java Map/List/array, whose access pattern varies by underlying
+--- Java type (see to_array) and makes pairs()/ipairs()/# raise "table/userdata
+--- value" errors when used the wrong way. This wraps every risky call in
+--- pcall so a bad value only shows up as a line in the description, not a
+--- crashed plugin.
+---@param value any
+---@param label? string  prefix for the description (default "value")
+---@return string  human-readable, directly loggable description
+local function describe_value(value, label)
+    label = label or "value"
+    local lines = { label .. " = " .. tostring(value) .. " (type: " .. type(value) .. ")" }
+
+    local paired_ok = pcall(function()
+        for k, v in pairs(value) do
+            lines[#lines + 1] = "  [" .. tostring(k) .. "] (" .. type(v) .. ") = " .. tostring(v)
+        end
+    end)
+
+    if not paired_ok then
+        lines[#lines + 1] = "  pairs() failed -- trying to_array() instead"
+        local array, count = to_array(value)
+        if count > 0 then
+            for i = 1, count do
+                lines[#lines + 1] = "  [" .. i .. "] = " .. tostring(array[i])
+            end
+        else
+            lines[#lines + 1] = "  (to_array() also found nothing -- no further introspection possible)"
+        end
+    end
+
+    return table.concat(lines, "\n")
+end
+
 -- normmalize product name to enum
 local product_names = {
     ["proxy"] = "PROXY",
@@ -282,6 +362,8 @@ end
 ---@field create_sidecar_name fun(path: string, extension?: string, output_path: string): string # Build a `<dir><stem>-Sprite.<ext>` path.
 ---@field create_preview_name fun(path: string, extension?: string, output_path: string): string # Build a `<dir><stem>-Preview.<ext>` path.
 ---@field merge_as_strings fun(dst: table, src: table, prefix?: string) # Copy src into dst, stringifying values (for save_techbical_metadata).
+---@field describe_value fun(value: any, label?: string): string # Crash-proof debug dump of a value's type and contents (handles userdata from the rio bridge).
+---@field to_array fun(value: any): table, number # Coerce a table, Java List userdata, or Java array userdata into a real 1-based Lua array.
 ---@field shell_quote fun(path: any): string # Single-quote a value as one safe shell argument.
 ---@field run_command fun(cmd: string): string|nil # Run a command, return stdout (nil + logs stderr on failure).
 ---@field run_quiet_command fun(cmd: string): boolean # Run a command for its side effects; true on success.
@@ -305,6 +387,8 @@ return {
     create_sidecar_name = create_sidecar_name,
     create_preview_name = create_preview_name,
     merge_as_strings = merge_as_strings,
+    describe_value = describe_value,
+    to_array = to_array,
     shell_quote = shell_quote,
     run_command = run_command,
     run_quiet_command = run_quiet_command,
