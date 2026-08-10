@@ -214,17 +214,23 @@ end
 --- A path that fails to probe (corrupt essence, unrelated sidecar file, etc.)
 --- is logged and skipped rather than aborting the whole package -- only the
 --- absence of any video essence at all is a hard failure.
+--- Uses rio_utils.to_array to read paths: in production this can arrive as a
+--- java.util.List bridged into Lua as userdata, which supports neither
+--- ipairs (fails the "is this a real table" check) nor # (no metamethod at
+--- all) -- only its Java methods (:size()/:get(i)) work.
 ---@param paths string[]  array of related essence paths for one OP-Atom package
 ---@return string|nil video_path  the path with a video stream
 ---@return string[] audio_paths  audio-only paths, in input order
 ---@return string? err
 local function resolve_essence_paths(paths)
-    if #(paths or {}) == 0 then
+    local array, count = rio_utils.to_array(paths)
+    if count == 0 then
         return nil, {}, "No input paths provided"
     end
 
     local video_path, audio_paths = nil, {}
-    for _, path in ipairs(paths) do
+    for i = 1, count do
+        local path = array[i]
         local meta, err = get_video_metadata(path)
         if not meta then
             rio:log_warn("resolve_essence_paths: skipping unprobeable input '" .. tostring(path) .. "': " .. tostring(err))

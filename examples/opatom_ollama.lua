@@ -27,19 +27,24 @@ end
 
 function plugin.execute()
 
+    rio:log_info("ENTER opatom_ollama.execute()")
+
     local rio_utils = require("rio_utils")
     local ffmpeg_pipeline = require("ffmpeg_pipeline")
     local ollama = require("ollama_pipeline")
     local whisper = require("whisper_pipeline")
 
-    local ollama_opts = ollama.make_options_object(settings)
-    local ffmpeg_opts = ffmpeg_pipeline.make_options_object(settings)
 
     -- set statuses to "INITIALIZING" for all products
     rio:product_status(rio_utils.get_product_name("proxy"), rio_utils.get_status_name("initializing"), nil)
     rio:product_status(rio_utils.get_product_name("thumbnail"), rio_utils.get_status_name("initializing"), nil)
     rio:product_status(rio_utils.get_product_name("sidecar"), rio_utils.get_status_name("initializing"), nil)
     rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("initializing"), nil)
+
+    rio:log_info(rio_utils.describe_value(settings, "settings"))
+    local ollama_opts = ollama.make_options_object(settings)
+    local ffmpeg_opts = ffmpeg_pipeline.make_options_object(settings)
+
     if (settings.do_transcription) then
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("initializing"), nil)
     end
@@ -50,7 +55,8 @@ function plugin.execute()
     rio:log_debug("Processing video: " .. tostring(input) .. " output: " .. tostring(proxy_path) .. " thumbnail: " .. tostring(thumbnail_path) .. " sprite: " .. tostring(sidecar_path))
 
     local associated_files = rio:get_object_files()
-    rio:log_info("Found " .. tostring(#associated_files) .. " associated files")
+    rio:log_info(rio_utils.describe_value(associated_files, "associated_files"))
+    -- rio:log_info("Found " .. tostring(#associated_files) .. " associated files")
 
     local technical_metadata, tech_err = ffmpeg_pipeline.get_op_atom_video_metadata(associated_files)
     if not technical_metadata then
