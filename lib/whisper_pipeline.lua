@@ -7,7 +7,7 @@
     helper functions for whisper.cpp (whisper-cli) speech-to-text in Rio plugin scripts
     REQUIRES: whisper-cli (whisper.cpp) installed and available in the system PATH.
     REQUIRES: ffmpeg (to normalize audio to the 16 kHz mono WAV whisper.cpp requires).
-    REQUIRES: a whisper model file; set `whisper_model` below or pass opts.model.
+    REQUIRES: a whisper model file; pass opts.model.
 ]]--
 
 ---@type RioUtils
@@ -15,7 +15,17 @@ local rio_utils = require("rio_utils")
 
 local WHISPER = "whisper-cli"
 local FFMPEG = "ffmpeg"
-local whisper_model = "/Users/jk/whisper-base.en.bin"
+
+--- Extract whisper options from a settings object
+--- @param config table  settings object with Whisper options
+--- @return table  Whisper options table with keys: model_path, language, threads
+local function make_options_object(config)
+    return {
+        model = config.model,
+        language = config.language,
+        threads = config.threads,
+    }
+end
 
 --- Normalize any audio/video input to the 16 kHz mono WAV that whisper.cpp requires.
 ---@param input_path string  source media (audio or video)
@@ -43,14 +53,14 @@ end
 --- the resulting .txt file (the clean, timestamp-free transcript).
 ---@param input_path string  source media file
 ---@param output_path string  directory prefix for intermediate + output files (e.g. the temp cache)
----@param opts? { model?: string, language?: string, threads?: number }
+---@param opts? { model: string, language?: string, threads?: number }
 ---@return table|nil result  { text, txt_path, word_count, char_count }, or nil on failure
 ---@return string? err
 local function transcribe_audio(input_path, output_path, opts)
     opts = opts or {}
-    local model = opts.model or whisper_model
+    local model = opts.model
     if not model or model == "" then
-        return nil, "no whisper model configured (set whisper_model or opts.model)"
+        return nil, "no whisper model configured (set opts.model)"
     end
 
     local stem = rio_utils.sanitize_filename(rio_utils.split_file_name(input_path))
@@ -105,4 +115,5 @@ end
 return {
     extract_audio_wav = extract_audio_wav,
     transcribe_audio = transcribe_audio,
+    make_options_object = make_options_object,
 }

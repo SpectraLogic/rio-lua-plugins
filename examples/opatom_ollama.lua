@@ -22,6 +22,10 @@ function plugin.schema()
       { key = "thumbnail_format", type = "enum",   default = "jpg",     choices ={"jpg", "webp", "png"},             label = "Thumbnail Format" },
       { key = "thumbnail_size", type = "enum",    default = "320x180", choices ={"320x180", "640x360", "1280x720"}, label = "Thumbnail Size" },
       { key = "thumbnail_dpi",  type = "integer", default = 72,                                        label = "Thumbnail DPI" },
+      -- Whisper transcription
+      { key = "model", type = "string",  default = "C:\\Whasper\\models\\ggml-base.en.bin",            label = "Whisper Model Path" },
+      { key = "language", type = "string",  default = "en",                                            label = "Whisper Language" },
+      { key = "threads", type = "integer",  default = 4,                                               label = "Whisper Threads" },
   })
 end
 
