@@ -22,6 +22,10 @@ function plugin.schema()
       { key = "thumbnail_format", type = "enum",   default = "jpg",     choices ={"jpg", "webp", "png"},             label = "Thumbnail Format" },
       { key = "thumbnail_size", type = "enum",    default = "320x180", choices ={"320x180", "640x360", "1280x720"}, label = "Thumbnail Size" },
       { key = "thumbnail_dpi",  type = "integer", default = 72,                                        label = "Thumbnail DPI" },
+      -- Whisper transcription
+      { key = "model", type = "string",  default = "C:\\Whasper\\models\\ggml-base.en.bin",            label = "Whisper Model Path" },
+      { key = "language", type = "string",  default = "en",                                            label = "Whisper Language" },
+      { key = "threads", type = "integer",  default = 4,                                               label = "Whisper Threads" },
   })
 end
 
@@ -44,6 +48,7 @@ function plugin.execute()
     rio:log_info(rio_utils.describe_value(settings, "settings"))
     local ollama_opts = ollama.make_options_object(settings)
     local ffmpeg_opts = ffmpeg_pipeline.make_options_object(settings)
+    local whisper_opts = whisper.make_options_object(settings)
 
     if (settings.do_transcription) then
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("initializing"), nil)
@@ -118,7 +123,7 @@ function plugin.execute()
     if (settings.do_transcription) then
         -- transcribe audio from the video proxy
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("active"), nil)
-        local transcription_result, transcription_err = whisper.transcribe_audio(proxy_path, working_directory)
+        local transcription_result, transcription_err = whisper.transcribe_audio(proxy_path, working_directory, whisper_opts)
         if not transcription_result then
             rio:log_error("Failed to transcribe audio:" .. tostring(transcription_err))
             rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("failure"), tostring(transcription_err))
