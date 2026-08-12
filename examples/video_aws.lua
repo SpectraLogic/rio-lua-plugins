@@ -46,6 +46,7 @@ function plugin.execute()
 
     local aws_options = aws.make_options_object(settings)
     local ffmpeg_opts = ffmpeg_pipeline.make_options_object(settings)
+    local whisper_opts = whisper.make_options_object(settings)
 
     -- set statuses to "INITIALIZING" for all products
     rio:product_status(rio_utils.get_product_name("proxy"), rio_utils.get_status_name("initializing"), nil)
@@ -118,7 +119,7 @@ function plugin.execute()
 
     -- transcribe audio from the proxy
     if (settings.do_transcription) then
-        local transcription_result, transcription_err = whisper.transcribe_audio(proxy_path, working_directory)
+        local transcription_result, transcription_err = whisper.transcribe_audio(proxy_path, working_directory, whisper_opts)
         if not transcription_result then
             rio:log_error("Failed to transcribe audio:" .. tostring(transcription_err))
             rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("failure"), tostring(transcription_err))
