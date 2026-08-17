@@ -119,6 +119,7 @@ local function run_proxy_command(input_path, extra_audio, output_path, opts)
 
     if extension == "mp4" then
         codec_args = {
+            opts.start_timecode and ("-timecode " .. rio_utils.shell_quote(opts.start_timecode)) or nil,
             "-c:v libx264",
             "-preset medium",
             "-crf 23",
@@ -129,6 +130,7 @@ local function run_proxy_command(input_path, extra_audio, output_path, opts)
         }
     elseif extension == "webm" then
         codec_args = {
+            opts.start_timecode and ("-timecode " .. rio_utils.shell_quote(opts.start_timecode)) or nil,
             "-c:v libvpx-vp9",
             "-crf 31",
             "-b:v 0",
@@ -189,7 +191,6 @@ local function run_proxy_command(input_path, extra_audio, output_path, opts)
     if not rio_utils.run_quiet_command(cmd) then
         return nil, "ffmpeg proxy command failed\nCommand: " .. cmd
     end
-
     return get_video_metadata(output_path)
 end
 
@@ -199,7 +200,7 @@ end
 --- webm -> VP9/Opus, m3u8 -> HLS single-file. Scaled to max width 1280.
 ---@param input_path string  source video
 ---@param output_path string  proxy destination (.mp4, .webm, or .m3u8)
----@param opts? { deinterlace?: boolean, proxy_format?: string }
+---@param opts? { deinterlace?: boolean, proxy_format?: string, start_timecode?: string, }
 ---@return table|nil metadata  the proxy's video metadata, or nil on failure
 ---@return string? err
 local function make_video_proxy(input_path, output_path, opts)

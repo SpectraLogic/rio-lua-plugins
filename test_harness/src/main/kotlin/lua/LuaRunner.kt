@@ -50,7 +50,7 @@ fun main(args: Array<String>) {
     registerModules(globals)
     globals.get("package").set(
         "path",
-        "$scriptDir/?.lua;$scriptDir/lib/?.lua;$scriptDir/../lib/?.lua;$scriptDir/?/init.lua",
+        "$scriptDir/?.lua;$scriptDir/lib/?.lua;$scriptDir/../lib/?.lua;?.lua;$scriptDir/?/init.lua",
     )
 
     logger.info("Running ${scriptPath.fileName} (input_path=$inputPath, output_path=$outputPath)")
