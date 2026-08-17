@@ -61,6 +61,12 @@ function plugin.execute()
     end
 
     local duration = 0
+    -- extract the starting timecode and attach it to the proxy 
+    local start_timecode = technical_metadata and technical_metadata.start_timecode or nil
+    if start_timecode then
+        rio:log_info("Video has start timecode: " .. tostring(start_timecode))
+        ffmpeg_opts.start_timecode = start_timecode
+    end
     rio:product_status(rio_utils.get_product_name("proxy"), rio_utils.get_status_name("active"), nil)
     local proxy_meta, proxy_err = ffmpeg_pipeline.make_video_proxy(input, proxy_path, ffmpeg_opts)
     if not proxy_meta then

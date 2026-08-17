@@ -8,6 +8,12 @@ repositories {
     mavenCentral()
 }
 
+sourceSets {
+    main {
+        resources.srcDir("../lib")
+    }
+}
+
 dependencies {
     implementation(libs.luaj.jse)
     implementation(libs.gson)
