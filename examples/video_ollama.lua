@@ -126,7 +126,7 @@ function plugin.execute()
     if (settings.do_transcription) then
         -- transcribe audio from the video proxy
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("active"), nil)
-        rio:log_info("Transcribing audio from proxy: " .. tostring(proxy_path) .. " to wav: " .. tostring(wav_path))
+        rio:log_debug("Transcribing audio from proxy: " .. tostring(proxy_path) .. " to wav: " .. tostring(wav_path))
         local transcription_result, transcription_err = whisper.transcribe_audio(proxy_path, wav_path, whisper_opts)
         if not transcription_result then
             rio:log_error("Failed to transcribe audio:" .. tostring(transcription_err))
