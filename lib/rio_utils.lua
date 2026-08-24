@@ -12,7 +12,7 @@ local IS_WINDOWS = os.getenv("OS") == "Windows_NT"
 ---@return string stem  filename without directory or extension
 ---@return string|nil extension  extension without the dot, or nil if none
 local function split_file_name(path)
-    local file_name = path:match("([^/]+)$") or path
+    local file_name = path:match("([^/\\]+)$") or path
     local stem = file_name:match("(.+)%.([^%.]+)$") or file_name
     local extension = file_name:match("%.([^%.]+)$")
     return stem, extension
@@ -29,6 +29,23 @@ local function sanitize_filename(value)
     :gsub("[_%.%-]+$", ""))
 end
 
+--- Join a directory and filename, inserting a separator only if `dir` doesn't
+--- already end with one. Some Rio hosts hand back a working_directory with no
+--- trailing separator, and naive `dir .. name` concatenation then fuses the
+--- last path segment onto the filename instead of joining them.
+---@param dir string  directory prefix (with or without trailing separator)
+---@param name string  filename to append
+---@return string
+local function join_path(dir, name)
+    dir = tostring(dir or "")
+    if dir == "" then return name end
+    local last = dir:sub(-1)
+    if last == "/" or last == "\\" then
+        return dir .. name
+    end
+    return dir .. (IS_WINDOWS and "\\" or "/") .. name
+end
+
 --- Build a proxy output path: `<output_path><stem>-Proxy.<ext>`.
 ---@param path string  source file path
 ---@param extension? string  proxy extension without dot (default "webp")
@@ -36,7 +53,7 @@ end
 ---@return string  full proxy path
 local function create_proxy_name(path, extension, output_path)
     local stem = sanitize_filename(split_file_name(path))
-    return output_path .. stem .. "-Proxy." .. (extension or "webp")
+    return join_path(output_path, stem .. "-Proxy." .. (extension or "webp"))
 end
 
 --- Build a thumbnail output path: `<output_path><stem>-Thumbnail.<ext>`.
@@ -46,7 +63,7 @@ end
 ---@return string  full thumbnail path
 local function create_thumbnail_name(path, extension, output_path)
     local stem = sanitize_filename(split_file_name(path))
-    return output_path .. stem .. "-Thumbnail." .. (extension or "webp")
+    return join_path(output_path, stem .. "-Thumbnail." .. (extension or "webp"))
 end
 
 --- Build a preview output path: `<output_path><stem>-Preview.<ext>`.
@@ -56,7 +73,7 @@ end
 ---@return string  full preview path
 local function create_preview_name(path, extension, output_path)
     local stem = sanitize_filename(split_file_name(path))
-    return output_path .. stem .. "-Preview." .. (extension or "webp")
+    return join_path(output_path, stem .. "-Preview." .. (extension or "webp"))
 end
 
 --- Build a sprite output path: `<output_path><stem>-Sprite.<ext>`.
@@ -66,7 +83,18 @@ end
 ---@return string  full sprite path
 local function create_sidecar_name(path, extension, output_path)
     local stem = sanitize_filename(split_file_name(path))
-    return output_path .. stem .. "-Sprite." .. (extension or "webp")
+    return join_path(output_path, stem .. "-Sprite." .. (extension or "webp"))
+end
+
+--- Build a WAV output path for whisper transcription: `<output_path><stem>.wav`.
+--- Derives the stem from the original source `path` (like create_proxy_name etc.),
+--- not from an already-suffixed proxy path, so callers get a clean, single name.
+---@param path string  source file path (the original asset, not the proxy)
+---@param output_path string  directory prefix for the result
+---@return string  full wav path
+local function create_wav_filename(path, output_path)
+    local stem = sanitize_filename(split_file_name(path))
+    return join_path(output_path, stem .. ".wav")
 end
 
 --- Single-quote (Unix) or double-quote (Windows) a value for safe use as one shell argument.
@@ -357,10 +385,12 @@ end
 ---@class RioUtils
 ---@field split_file_name fun(path: string): string, string|nil # Split a path into filename stem and extension.
 ---@field sanitize_filename fun(value: any): string # Replace filename-hostile characters with underscores.
+---@field join_path fun(dir: string, name: string): string # Join a directory and filename, adding a separator only if missing.
 ---@field create_proxy_name fun(path: string, extension?: string, output_path: string): string # Build a `<dir><stem>-Proxy.<ext>` path.
 ---@field create_thumbnail_name fun(path: string, extension?: string, output_path: string): string # Build a `<dir><stem>-Thumbnail.<ext>` path.
 ---@field create_sidecar_name fun(path: string, extension?: string, output_path: string): string # Build a `<dir><stem>-Sprite.<ext>` path.
 ---@field create_preview_name fun(path: string, extension?: string, output_path: string): string # Build a `<dir><stem>-Preview.<ext>` path.
+---@field create_wav_filename fun(path: string, output_path: string): string # Build a `<dir><stem>.wav` path for whisper transcription.
 ---@field merge_as_strings fun(dst: table, src: table, prefix?: string) # Copy src into dst, stringifying values (for save_techbical_metadata).
 ---@field describe_value fun(value: any, label?: string): string # Crash-proof debug dump of a value's type and contents (handles userdata from the rio bridge).
 ---@field to_array fun(value: any): table, number # Coerce a table, Java List userdata, or Java array userdata into a real 1-based Lua array.
@@ -382,10 +412,12 @@ end
 return {
     split_file_name = split_file_name,
     sanitize_filename = sanitize_filename,
+    join_path = join_path,
     create_proxy_name = create_proxy_name,
     create_thumbnail_name = create_thumbnail_name,
     create_sidecar_name = create_sidecar_name,
     create_preview_name = create_preview_name,
+    create_wav_filename = create_wav_filename,
     merge_as_strings = merge_as_strings,
     describe_value = describe_value,
     to_array = to_array,

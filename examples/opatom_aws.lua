@@ -27,7 +27,7 @@ function plugin.schema()
       { key = "thumbnail_size", type = "enum",    default = "320x180", choices ={"320x180", "640x360", "1280x720"}, label = "Thumbnail Size" },
       { key = "thumbnail_dpi",  type = "integer", default = 72,                                        label = "Thumbnail DPI" },
       -- Whisper transcription
-      { key = "model", type = "string",  default = "C:\\Whasper\\models\\ggml-base.en.bin",            label = "Whisper Model Path" },
+      { key = "model", type = "string",  default = "C:\\Whisper\\models\\ggml-base.en.bin",            label = "Whisper Model Path" },
       { key = "language", type = "string",  default = "en",                                            label = "Whisper Language" },
       { key = "threads", type = "integer",  default = 4,                                               label = "Whisper Threads" },
     })
@@ -121,7 +121,8 @@ function plugin.execute()
     if (settings.do_transcription) then
         -- transcribe audio from the video proxy
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("active"), nil)
-        local transcription_result, transcription_err = whisper.transcribe_audio(proxy_path, working_directory, whisper_opts)
+        local wav_path = rio_utils.create_wav_filename(input, working_directory)
+        local transcription_result, transcription_err = whisper.transcribe_audio(proxy_path, wav_path, whisper_opts)
         if not transcription_result then
             rio:log_error("Failed to transcribe audio:" .. tostring(transcription_err))
             rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("failure"), tostring(transcription_err))

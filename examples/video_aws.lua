@@ -29,7 +29,7 @@ function plugin.schema()
       { key = "thumbnail_dpi",  type = "integer", default = 72,                                         label = "Thumbnail DPI" },
       { key = 's3_bucket' ,     type = 'string',  required = 'true',                                    label = 'Temp AWS S3 Bucket' },
       -- Whisper transcription
-      { key = "model", type = "string",  default = "C:\\Whasper\\models\\ggml-base.en.bin",            label = "Whisper Model Path" },
+      { key = "model", type = "string",  default = "C:\\Whisper\\models\\ggml-base.en.bin",            label = "Whisper Model Path" },
       { key = "language", type = "string",  default = "en",                                            label = "Whisper Language" },
       { key = "threads", type = "integer",  default = 4,                                               label = "Whisper Threads" },
   })
@@ -119,7 +119,8 @@ function plugin.execute()
 
     -- transcribe audio from the proxy
     if (settings.do_transcription) then
-        local transcription_result, transcription_err = whisper.transcribe_audio(proxy_path, working_directory, whisper_opts)
+        local wav_path = rio_utils.create_wav_filename(input, working_directory)
+        local transcription_result, transcription_err = whisper.transcribe_audio(proxy_path, wav_path, whisper_opts)
         if not transcription_result then
             rio:log_error("Failed to transcribe audio:" .. tostring(transcription_err))
             rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("failure"), tostring(transcription_err))
