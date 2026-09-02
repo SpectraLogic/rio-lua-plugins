@@ -23,7 +23,8 @@ local function make_options_object(config)
         do_celebrities = config.do_aws_celebrities,
         do_faces = config.do_aws_faces,
         do_text = config.do_aws_text,
-        do_moderation = config.do_aws_moderation
+        do_moderation = config.do_aws_moderation,
+        profile = config.aws_profile,
     }
 end
 
@@ -57,7 +58,7 @@ end
 --- Uploads to S3, runs each enabled operation, cleans up, returns aggregated metadata.
 ---@param image_path string  local path to the image file
 ---@param s3_bucket string  S3 bucket name to use for temporary upload
----@param opts? { do_labels?: boolean, do_celebrities?: boolean, do_faces?: boolean, do_text?: boolean, do_moderation?: boolean, prefix?: string }
+---@param opts? { do_labels?: boolean, do_celebrities?: boolean, do_faces?: boolean, do_text?: boolean, do_moderation?: boolean, prefix?: string, profile?: string }
 ---@return table|nil metadata  aggregated { tags, description, celebrities, detected_text, moderation_labels }, or nil
 ---@return string? err
 local function describe_image(image_path, s3_bucket, opts)
@@ -65,12 +66,22 @@ local function describe_image(image_path, s3_bucket, opts)
 
     local key = (opts.prefix or "tmp/") .. (image_path:match("([^/\\]+)$") or image_path)
 
-    local upload_ok = rio_utils.run_quiet_command(
-        "aws s3 cp " .. rio_utils.shell_quote(image_path) .. " " .. rio_utils.shell_quote("s3://" .. s3_bucket .. "/" .. key)
-    )
-    if not upload_ok then
-        return nil, "failed to upload frame to S3: " .. image_path
+    local upload_cmd = "aws s3 cp " .. rio_utils.shell_quote(image_path) .. " " .. rio_utils.shell_quote("s3://" .. s3_bucket .. "/" .. key)
+    if opts.profile then
+        upload_cmd = upload_cmd .. " --profile " .. rio_utils.shell_quote(opts.profile)
     end
+    local upload_ok, upload_output = rio_utils.run_quiet_command(upload_cmd)
+    -- The close-status can report success even when the aws CLI actually
+    -- failed (see rio_utils.run_quiet_command), so also check its output
+    -- for the CLI's own "An error occurred (...)" failure marker.
+    local aws_err = upload_output and upload_output:match("(An error occurred[^\n]*)")
+    if not upload_ok or aws_err then
+        return nil, "failed to upload frame to S3: " .. (aws_err or upload_output or upload_cmd)
+    else
+        rio:log_debug("Uploaded frame to S3: " .. upload_cmd)
+    end
+
+
 
     local metadata = { tags = {}, celebrities = {} }
     local errors = {}

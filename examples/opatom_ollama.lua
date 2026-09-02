@@ -146,8 +146,10 @@ function plugin.execute()
         rio:log_info("Sampled frames: " .. json.encode(sampled_frames, { indent = true }))
     end
 
+    -- NOTE: describe_frames always returns a results table (even empty),
+    -- so failure must be detected via ai_err, not via truthiness of ai_metadata.
     local ai_metadata, ai_err = ollama.describe_frames(sampled_frames, ollama_opts)
-    if not ai_metadata then
+    if ai_err then
         rio:log_error("Failed to describe video:" .. tostring(ai_err))
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("failure"), tostring(ai_err))
         rio:save_status(rio_utils.get_status_name("failure"), tostring(ai_err))
