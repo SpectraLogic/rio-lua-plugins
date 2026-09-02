@@ -21,13 +21,15 @@ function plugin.schema()
       { key = "preview_dpi",      type = "integer", default = 72,                                                     label = "Preview DPI" },
     -- AWS analysis
       { key = "max_tags_per_frame",         type = "integer", default = 20,       min = 1, max = 50,   label = "Max Tags per Frame" },
-      { key = "aws_confidence_threshold",   type = "integer",  default = 90,      min = 0, max = 100,  label = "AWS Confidence Threshold (%)" },
+      { key = "aws_confidence_threshold",   type = "integer", default = 90,       min = 0, max = 100,  label = "AWS Confidence Threshold (%)" },
       { key = "do_transcription",           type = "boolean", default = true,                          label = "Enable Transcription" },
       { key = "do_aws_labels",              type = "boolean", default = true,                          label = "AWS Label Detection" },
       { key = "do_aws_celebrities",         type = "boolean", default = true,                          label = "AWS Celebrity Recognition" },
       { key = "do_aws_faces",               type = "boolean", default = false,                         label = "AWS Face Detection" },
       { key = "do_aws_text",                type = "boolean", default = false,                         label = "AWS Text Detection" },
       { key = "do_aws_moderation",          type = "boolean", default = false,                         label = "AWS Content Moderation" },
+      { key = 's3_bucket' ,                 type = 'string',  required = 'true',                       label = 'Temp AWS S3 Bucket' },
+      { key = "aws_profile",                type = "string",  default = "default",                     label = "AWS Profile" },
   })
 end
 

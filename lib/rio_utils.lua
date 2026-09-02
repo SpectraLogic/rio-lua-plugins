@@ -137,21 +137,25 @@ local function run_command(cmd)
 end
 
 --- Run a shell command for its side effects, discarding output.
+--- NOTE: pipe:close() is only a reliable success/failure signal in the test
+--- harness -- in the real JVM-embedded host it can report success even when
+--- the command actually failed (see run_command above). Callers that need to
+--- detect failures the close-status misses (e.g. an AWS CLI error printed to
+--- stderr) should inspect the returned output themselves.
 ---@param cmd string  full shell command line
 ---@return boolean  true if the command exited successfully
+---@return string  combined stdout+stderr output, for diagnostics
 local function run_quiet_command(cmd)
-    -- The test harness patches io.popen()/close() so callers can rely on the
-    -- returned status. Capture combined output to aid diagnostics on failures.
     local p = io.popen(cmd .. " 2>&1")
-    if not p then return false end
+    if not p then return false, "" end
     local output = p:read("*a") or ""
     local ok = p:close()
     if not (ok == true or ok == 0) then
         rio:log_warn("Command failed: " .. cmd .. "\n" .. output)
-        return false
+        return false, output
     end
 
-    return true
+    return true, output
 end
 
 --- Return whether a regular file can be opened for reading.
@@ -396,7 +400,7 @@ end
 ---@field to_array fun(value: any): table, number # Coerce a table, Java List userdata, or Java array userdata into a real 1-based Lua array.
 ---@field shell_quote fun(path: any): string # Single-quote a value as one safe shell argument.
 ---@field run_command fun(cmd: string): string|nil # Run a command, return stdout (nil + logs stderr on failure).
----@field run_quiet_command fun(cmd: string): boolean # Run a command for its side effects; true on success.
+---@field run_quiet_command fun(cmd: string): boolean, string # Run a command for its side effects; true on success, plus combined stdout+stderr for diagnostics.
 ---@field join_command fun(parts: (string|nil)[]): string # Join command parts with spaces, dropping nils.
 ---@field file_exists fun(path: string): boolean # Return true when a file exists and is readable.
 ---@field parse_num fun(s: string|nil): number|nil # Parse the leading number from a string.

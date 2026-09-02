@@ -22,12 +22,13 @@ function plugin.schema()
       { key = "do_aws_faces",               type = "boolean", default = false,                         label = "AWS Face Detection" },
       { key = "do_aws_text",                type = "boolean", default = false,                         label = "AWS Text Detection" },
       { key = "do_aws_moderation",          type = "boolean", default = false,                         label = "AWS Content Moderation" },
+      { key = 's3_bucket' ,                 type = 'string',  required = 'true',                       label = 'Temp AWS S3 Bucket' },
+      { key = "aws_profile",                type = "string",  default = "default",                     label = "AWS Profile" },
       -- Proxy / thumbnail
       { key = "proxy_format",   type = "enum",    default = "mp4",    choices ={"mp4", "webm"}, label = "Proxy Format" },
       { key = "proxy_codec",    type = "enum",    default = "libx264", choices ={"libx264", "libx265", "libvpx-vp9"}, label = "Video Codec" },
       { key = "thumbnail_size", type = "enum",    default = "320x180", choices ={"320x180", "640x360", "1280x720"}, label = "Thumbnail Size" },
       { key = "thumbnail_dpi",  type = "integer", default = 72,                                         label = "Thumbnail DPI" },
-      { key = 's3_bucket' ,     type = 'string',  required = 'true',                                    label = 'Temp AWS S3 Bucket' },
       -- Whisper transcription
       { key = "model", type = "string",  default = "C:\\Whisper\\models\\ggml-base.en.bin",            label = "Whisper Model Path" },
       { key = "language", type = "string",  default = "en",                                            label = "Whisper Language" },
@@ -142,8 +143,10 @@ function plugin.execute()
         rio:log_info("Sampled frames: " .. json.encode(sampled_frames, { indent = true }))
     end
 
-    local ai_metadata, ai_err = aws.describe_frames(sampled_frames, aws_options.aws_s3_bucket or "jk-av-proxy", aws_options)
-    if not ai_metadata then
+    -- NOTE: describe_frames always returns a results table (even empty),
+    -- so failure must be detected via ai_err, not via truthiness of ai_metadata.
+    local ai_metadata, ai_err = aws.describe_frames(sampled_frames, aws_options.s3_bucket or "no-bucket-specified", aws_options)
+    if ai_err then
         rio:log_error("Failed to describe video with AWS Rekognition:" .. tostring(ai_err))
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("failure"), tostring(ai_err))
         return
