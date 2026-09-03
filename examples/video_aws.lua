@@ -26,7 +26,7 @@ function plugin.schema()
       { key = "aws_profile",                type = "string",  default = "default",                     label = "AWS Profile" },
       -- Proxy / thumbnail
       { key = "proxy_format",   type = "enum",    default = "mp4",    choices ={"mp4", "webm"}, label = "Proxy Format" },
-      { key = "proxy_codec",    type = "enum",    default = "libx264", choices ={"libx264", "libx265", "libvpx-vp9"}, label = "Video Codec" },
+      { key = "proxy_codec",    type = "enum",    default = "libx264", choices ={"libx264", "h264_nvenc", "h264_videotoolbox", "libvpx-vp9"}, label = "Video Codec" },
       { key = "thumbnail_size", type = "enum",    default = "320x180", choices ={"320x180", "640x360", "1280x720"}, label = "Thumbnail Size" },
       { key = "thumbnail_dpi",  type = "integer", default = 72,                                         label = "Thumbnail DPI" },
       -- Whisper transcription
@@ -35,6 +35,9 @@ function plugin.schema()
       { key = "threads", type = "integer",  default = 4,                                               label = "Whisper Threads" },
   })
 end
+
+-- override to support other codecs or change parameters from ffmpeg_pipeline's implementation
+local build_proxy_codec_args = require("ffmpeg_pipeline").build_proxy_codec_args
 
 function plugin.execute()
     rio:log_info("Starting MP4-AWS processing plugin: " .. tostring(input))
@@ -70,6 +73,8 @@ function plugin.execute()
     end
 
     local duration = 0
+    ffmpeg_opts.codec_args = build_proxy_codec_args(ffmpeg_opts.proxy_format, ffmpeg_opts.proxy_codec, ffmpeg_opts.start_timecode)
+    rio:log_info("Creating proxy with codec args: " .. tostring(ffmpeg_opts.codec_args))
     rio:product_status(rio_utils.get_product_name("proxy"), rio_utils.get_status_name("active"), nil)
     local proxy_meta, proxy_err = ffmpeg_pipeline.make_video_proxy(input, proxy_path, ffmpeg_opts)
     if not proxy_meta then

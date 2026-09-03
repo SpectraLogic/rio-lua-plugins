@@ -19,6 +19,72 @@ local magick_pipeline = require("magick_pipeline")
 local FFMPEG = "ffmpeg"
 local FFPROBE = "ffprobe"
 
+-- General support for popular codecs: libxh264, h264_nvenc, h264_videotoolbox, libvpx-vp9, etc. 
+-- this is a separate function so that the calling script could override it to support other codecs
+-- or handle different ffmpeg params without a new Rio build.
+-- Build with table.insert-after, not a leading `cond and x or nil`
+-- entry -- an unset start_timecode would otherwise silently drop every arg
+-- after it in the ipairs()-walked table.
+local function build_proxy_codec_args(proxy_format, proxy_codec, start_timecode)
+    local codec_args
+    -- Hardware encoders are checked ahead of proxy_format: each is only
+    -- ever meaningful for an mp4/H.264 target, and picking one shouldn't
+    -- get silently swapped out just because proxy_format says "webm" --
+    -- a mismatched combo should fail loudly in ffmpeg, not get overridden.
+    if proxy_codec == "h264_nvenc" then
+        -- NVENC has its own param set, distinct from libx264: no -crf/-preset.
+        -- -cq is NVENC's quality knob (only honored under -rc vbr); -b:v 0
+        -- lets -cq drive quality instead of targeting a bitrate.
+        codec_args = {
+            "-c:v h264_nvenc",
+            "-preset p5",   -- p1 (fastest) .. p7 (slowest/best); p5 balances speed/quality
+            "-rc vbr",
+            "-cq 23",
+            "-b:v 0",
+            "-pix_fmt yuv420p",
+            "-c:a aac",
+            "-b:a 128k",
+            "-movflags +faststart",
+        }
+    elseif proxy_codec == "h264_videotoolbox" then
+        -- VideoToolbox has no -crf/-preset either; -q:v (1-100, higher=better)
+        -- is its quality knob.
+        codec_args = {
+            "-c:v h264_videotoolbox",
+            "-q:v 65",
+            "-pix_fmt yuv420p",
+            "-c:a aac",
+            "-b:a 128k",
+            "-movflags +faststart",
+        }
+    elseif proxy_format == "webm" then
+        codec_args = {
+            "-c:v " .. (proxy_codec or "libvpx-vp9"),
+            "-crf 31",
+            "-b:v 0",
+            "-row-mt 1",        -- row-based multithreading (big win on multicore)
+            "-deadline good",   -- 'realtime' is even faster if you need it
+            "-cpu-used 5",      -- 0=slowest/best ... 8=fastest; 5 is a good proxy tradeoff
+            "-pix_fmt yuv420p", -- 8-bit 4:2:0 for broad proxy playability
+            "-c:a libopus",
+            "-b:a 128k",
+        }
+    else
+        codec_args = {
+            "-c:v " .. (proxy_codec or "libx264"),
+            "-preset medium",
+            "-crf 23",
+            "-pix_fmt yuv420p",  -- 8-bit 4:2:0 so 10-bit/4:2:2 sources (e.g. MXF) stay playable
+            "-c:a aac",
+            "-b:a 128k",
+            "-movflags +faststart",
+        }
+    end
+    if start_timecode then
+        table.insert(codec_args, 1, "-timecode " .. rio_utils.shell_quote(start_timecode))
+    end
+    return codec_args
+end
 
 --- Return the first stream of a given codec_type from an ffprobe streams list.
 ---@param streams table[]|nil  ffprobe `streams` array
@@ -47,7 +113,7 @@ end
 
 --- Probe a video with ffprobe for technical metadata.
 ---@param video_path string  path to the video file
----@return table|nil metadata  { format, duration_seconds, file_size_bytes, width, height, video_codec, audio_codec, frame_rate, pixel_format, field_order, operational_pattern, start_timecode, umid }, or nil on failure
+---@return table|nil metadata  { format, duration_seconds, file_size_bytes, width, height, proxy_codec, audio_codec, frame_rate, pixel_format, field_order, operational_pattern, start_timecode, umid }, or nil on failure
 ---@return string? err
 local function get_video_metadata(video_path)
     local cmd = rio_utils.join_command({
@@ -99,72 +165,24 @@ end
 --- extra audio-only inputs (already known -- no ffprobe classification here).
 --- Shared by make_video_proxy (single file, no extra audio) and
 --- make_op_atom_video_proxy (video path + audio paths already separated).
+--- Codec selection lives entirely with the caller (opts.codec_args) rather than
+--- in this packaged lib, since hardware/codec support shifts faster than this
+--- file's build/release cycle -- see examples/*.lua for how it's built.
 ---@param input_path string  source video
 ---@param extra_audio string[]  additional mono/stereo audio-only inputs to merge in
 ---@param output_path string  proxy destination (.mp4, .webm, or .m3u8)
----@param opts? { deinterlace?: boolean, proxy_format?: string }
+---@param opts? { deinterlace?: boolean, codec_args: string[] }
 ---@return table|nil metadata  the proxy's video metadata, or nil on failure
 ---@return string? err
 local function run_proxy_command(input_path, extra_audio, output_path, opts)
     opts = opts or {}
-    local extension = opts.proxy_format or rio_utils.get_file_extension(output_path)
+    if not opts.codec_args then
+        return nil, "run_proxy_command requires opts.codec_args (the -c:v/-c:a/etc argument list for the chosen proxy codec/container -- see examples/*.lua)"
+    end
 
     -- Deinterlace (yadif) interlaced sources so the progressive proxy has no combing.
     local scale = "scale='min(1280,iw)':-2"
     local video_filter = opts.deinterlace and ("yadif," .. scale) or scale
-
-    -- codec/output args — no -vf; the video filter is injected separately below
-    -- so it can be placed in filter_complex when extra audio inputs require it.
-    local codec_args
-
-    -- Built as a leading nil (`cond and x or nil`) in an ipairs()-walked table:
-    -- when start_timecode is unset, index 1 is nil and ipairs stops immediately,
-    -- silently dropping every codec arg after it (including -movflags +faststart).
-    -- Inserted conditionally after the fact instead, so the table never has a hole.
-    if extension == "mp4" then
-        codec_args = {
-            "-c:v libx264",
-            "-preset medium",
-            "-crf 23",
-            "-pix_fmt yuv420p",  -- 8-bit 4:2:0 so 10-bit/4:2:2 sources (e.g. MXF) stay playable
-            "-c:a aac",
-            "-b:a 128k",
-            "-movflags +faststart",
-        }
-        if opts.start_timecode then
-            table.insert(codec_args, 1, "-timecode " .. rio_utils.shell_quote(opts.start_timecode))
-        end
-    elseif extension == "webm" then
-        codec_args = {
-            "-c:v libvpx-vp9",
-            "-crf 31",
-            "-b:v 0",
-            "-row-mt 1",        -- row-based multithreading (big win on multicore)
-            "-deadline good",   -- 'realtime' is even faster if you need it
-            "-cpu-used 5",      -- 0=slowest/best ... 8=fastest; 5 is a good proxy tradeoff
-            "-pix_fmt yuv420p",  -- 8-bit 4:2:0 for broad proxy playability
-            "-c:a libopus",
-            "-b:a 128k",
-        }
-        if opts.start_timecode then
-            table.insert(codec_args, 1, "-timecode " .. rio_utils.shell_quote(opts.start_timecode))
-        end
-    elseif extension == "m3u8" then
-        -- HLS single-file: all segments in one .ts, playlist uses byte ranges
-        codec_args = {
-            "-c:v libx264",
-            "-preset fast",
-            "-crf 23",
-            "-pix_fmt yuv420p",
-            "-c:a aac",
-            "-b:a 128k",
-            "-hls_time 6",
-            "-hls_flags single_file",
-            "-hls_playlist_type vod",
-        }
-    else
-        return nil, "Unsupported video proxy extension: " .. tostring(extension)
-    end
 
     local parts = {FFMPEG, "-y"}
 
@@ -189,7 +207,7 @@ local function run_proxy_command(input_path, extra_audio, output_path, opts)
         parts[#parts + 1] = "-vf " .. rio_utils.shell_quote(video_filter)
     end
 
-    for _, arg in ipairs(codec_args) do
+    for _, arg in ipairs(opts.codec_args) do
         parts[#parts + 1] = arg
     end
     parts[#parts + 1] = rio_utils.shell_quote(output_path)
@@ -198,17 +216,17 @@ local function run_proxy_command(input_path, extra_audio, output_path, opts)
 
     if not rio_utils.run_quiet_command(cmd) then
         return nil, "ffmpeg proxy command failed\nCommand: " .. cmd
+    else
+        rio:log_info("Proxy command succeeded: " .. tostring(cmd))
     end
     return get_video_metadata(output_path)
 end
 
 --- Transcode a single self-contained video file to a proxy (normal mp4/mov/mxf
 --- OP1a case -- caller already knows this isn't a split-essence source).
---- The codec is chosen from output_path's extension: mp4 -> H.264/AAC,
---- webm -> VP9/Opus, m3u8 -> HLS single-file. Scaled to max width 1280.
 ---@param input_path string  source video
 ---@param output_path string  proxy destination (.mp4, .webm, or .m3u8)
----@param opts? { deinterlace?: boolean, proxy_format?: string, start_timecode?: string, }
+---@param opts? { deinterlace?: boolean, codec_args: string[] }
 ---@return table|nil metadata  the proxy's video metadata, or nil on failure
 ---@return string? err
 local function make_video_proxy(input_path, output_path, opts)
@@ -297,7 +315,7 @@ end
 --- then the audio-only essence is merged to stereo via filter_complex.
 ---@param paths string[]  array of related essence paths for one OP-Atom package
 ---@param output_path string  proxy destination (.mp4, .webm, or .m3u8)
----@param opts? { deinterlace?: boolean, proxy_format?: string }
+---@param opts? { deinterlace?: boolean, codec_args: string[] }
 ---@return table|nil metadata  the proxy's video metadata, or nil on failure
 ---@return string? err
 local function make_op_atom_video_proxy(paths, output_path, opts)
@@ -568,6 +586,7 @@ end
 ---@field aggregate_frame_results fun(frame_results: table[], max_tags?: number): table # Combine per-frame AI results into one metadata map.
 ---@field make_video_sidecar fun(input_path: string, output_path: string, duration_seconds?: number): boolean|nil, string? # Create a 7x7 sprite sheet of frames from a video.
 ---@field make_options_object fun(opts?: table): table # Create a defaulted options object for ffmpeg_pipeline functions.
+---@field build_proxy_codec_args fun(proxy_format: string, proxy_codec: string, start_timecode?: string): string[] # Build -c:v/-c:a/etc args for libx264, h264_nvenc, h264_videotoolbox, or libvpx-vp9. Callers may shadow/wrap this for other codecs without a lib rebuild.
 return {
     get_video_metadata = get_video_metadata,
     make_video_proxy = make_video_proxy,
@@ -579,18 +598,5 @@ return {
     aggregate_frame_results = aggregate_frame_results,
     make_video_sidecar = make_video_sidecar,
     make_options_object = make_options_object,
+    build_proxy_codec_args = build_proxy_codec_args,
 }
-
-
---[[
-DURATION=$(ffprobe -v error -select_streams v:0 \
-  -show_entries format=duration \
-  -of default=noprint_wrappers=1:nokey=1 input.mp4)
-
-ffmpeg -i input.mp4 \
-  -vf "fps=49/${DURATION},scale=160:90,tile=7x7" \
-  -frames:v 1 \
-  -c:v libwebp -quality 80 \
-  sprites.webp
-
-]]--
