@@ -518,7 +518,7 @@ local function aggregate_frame_results(frame_results, max_tags)
     end)
 
     local top_tags = {}
-    local limit = max_tags or 15
+    local limit = max_tags or 20
     for index = 1, math.min(limit, #sorted_tags) do
         top_tags[#top_tags + 1] = sorted_tags[index].tag
     end

@@ -15,7 +15,7 @@ local b64 = require("base64")
 
 local PROMPT = [[
 Analyze this image and return a JSON object with exactly these two fields:
-    "tags": an array of 5-15 short descriptive keyword tags
+    "tags": an array of up to 15 short descriptive keyword tags
     "description": a single sentence describing the image
 Focus on subjects, objects, colors, mood, style, and setting.
 Return ONLY valid JSON - no markdown fences, no explanation.
@@ -24,7 +24,8 @@ Return ONLY valid JSON - no markdown fences, no explanation.
 local function make_options_object(config)
     return {
         url = config.ollama_url,
-        model = config.ollama_model
+        model = config.ollama_model,
+        max_tags_per_frame = config.max_tags_per_frame,
     }
 end
 
@@ -73,29 +74,6 @@ local function describe_image(image_path, opts)
         stream = false,
         images = { image_data }
     })
-
---[[    local response_body = {}
-    local _, code = http.request{
-        url = "http://localhost:11434/api/generate",
-        method = "POST",
-        headers = {
-            ["Content-Type"] = "application/json",
-            ["Content-Length"] = tostring(#body)
-        },
-        source = ltn12.source.string(body),
-        sink = ltn12.sink.table(response_body)
-    }
-
-    local response_str = table.concat(response_body)
-    if code ~= 200 then
-        return nil, "HTTP request failed with code: " .. tostring(code) .. "\n" .. response_str
-    end
-
-  local resp = rio:http_post("http://localhost:11434/api/generate", body)
-    local response_str = resp.body
-    local code = resp.status
-
-    ]]--
 
     local resp = lua_fetch.fetch("http://localhost:11434/api/generate", {
         method = "POST",

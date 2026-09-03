@@ -12,7 +12,7 @@ function plugin.schema()
   return json.encode({
       -- Ollama analysis
       { key = "frames_to_sample",           type = "integer", default = 10,       min = 1, max = 30,   label = "Frames to Sample" },
-      { key = "max_tags_per_frame",         type = "integer", default = 20,       min = 1, max = 50,   label = "Max Tags per Frame" },
+      { key = "max_tags_per_frame",         type = "integer", default = 20,       min = 1, max = 50,   label = "Max Tags" },
       { key = "do_transcription",           type = "boolean", default = true,                          label = "Enable Transcription" },
       { key = "ollama_url",                 type = "string",  default = "http://localhost:11434",      label = "Ollama URL" },
       { key = "ollama_model",               type = "string",  default = "llava",                       label = "Ollama Model" },

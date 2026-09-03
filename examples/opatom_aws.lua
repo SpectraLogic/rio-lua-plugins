@@ -12,7 +12,7 @@ function plugin.schema()
   return json.encode({
     -- AWS analysis
       { key = "frames_to_sample",           type = "integer", default = 10,       min = 1, max = 30,   label = "Frames to Sample" },
-      { key = "max_tags_per_frame",         type = "integer", default = 20,       min = 1, max = 50,   label = "Max Tags per Frame" },
+      { key = "max_tags_per_frame",         type = "integer", default = 20,       min = 1, max = 50,   label = "Max Tags" },
       { key = "aws_confidence_threshold",   type = "integer",  default = 90,      min = 0, max = 100,  label = "AWS Confidence Threshold (%)" },
       { key = "do_transcription",           type = "boolean", default = true,                          label = "Enable Transcription" },
       { key = "do_aws_labels",              type = "boolean", default = true,                          label = "AWS Label Detection" },
