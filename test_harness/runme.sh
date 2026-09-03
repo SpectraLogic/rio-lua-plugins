@@ -1,7 +1,7 @@
 #!/bin/sh
-# Usage: ./runme.sh <script> <input> [output] [settings-json]
+# Usage: ./runme.sh <script> <input> [settings-json] [output]
 if [ $# -lt 2 ]; then
-    echo "Usage: $0 <script> <input> [output] [settings-json]" >&2
+    echo "Usage: $0 <script> <input> [settings-json] [output]" >&2
     exit 1
 fi
 
@@ -12,15 +12,11 @@ fi
 
 script="$1"
 input="$2"
-output="${3:-$HOME/proxy/lua-output}"
-clip_dir="$4"
-if [ -n "$clip_dir" ]; then
-    clip_opt="-DluaClip=$clip_dir"
-fi
-settings="$5"
+settings="$3"
 settings_opt=""
 if [ -n "$settings" ]; then
     settings_opt="-DluaSettings=$settings"
 fi
+output="${4:-$HOME/proxy/lua-output}"
 exec java -DluaInput="$input" -DluaOutput="$output" $settings_opt $clip_opt \
      -jar build/libs/plugin_test_harness-all.jar "$script"
