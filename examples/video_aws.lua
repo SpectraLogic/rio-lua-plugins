@@ -14,7 +14,7 @@ function plugin.schema()
   return json.encode({
     -- AWS analysis
       { key = "frames_to_sample",           type = "integer", default = 10,       min = 1, max = 30,   label = "Frames to Sample" },
-      { key = "max_tags_per_frame",         type = "integer", default = 20,       min = 1, max = 50,   label = "Max Tags per Frame" },
+      { key = "max_tags_per_frame",         type = "integer", default = 20,       min = 1, max = 50,   label = "Max Tags" },
       { key = "aws_confidence_threshold",   type = "integer",  default = 90,      min = 0, max = 100,  label = "AWS Confidence Threshold (%)" },
       { key = "do_transcription",           type = "boolean", default = true,                          label = "Enable Transcription" },
       { key = "do_aws_labels",              type = "boolean", default = true,                          label = "AWS Label Detection" },
@@ -160,7 +160,7 @@ function plugin.execute()
     end
 
 
-    local sample_frame_metadata, sample_frame_errs = ffmpeg_pipeline.aggregate_frame_results(ai_metadata, aws_options.max_tags_per_frame)
+    local sample_frame_metadata, sample_frame_errs = ffmpeg_pipeline.aggregate_frame_results(ai_metadata, ffmpeg_opts.max_tags_per_frame)
     if not sample_frame_metadata then
         rio:log_error("Failed to aggregate frame results:" .. json.encode(sample_frame_errs, { indent = true }))
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("failure"), "Failed to aggregate frame results")
