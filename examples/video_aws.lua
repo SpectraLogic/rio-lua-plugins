@@ -12,11 +12,10 @@ plugin = {}
 
 function plugin.schema()
   return json.encode({
-    -- AWS analysis
+    -- AWS Rekognition
       { key = "frames_to_sample",           type = "integer", default = 10,       min = 1, max = 30,   label = "Frames to Sample" },
       { key = "max_tags_per_frame",         type = "integer", default = 20,       min = 1, max = 50,   label = "Max Tags" },
       { key = "aws_confidence_threshold",   type = "integer",  default = 90,      min = 0, max = 100,  label = "AWS Confidence Threshold (%)" },
-      { key = "do_transcription",           type = "boolean", default = true,                          label = "Enable Transcription" },
       { key = "do_aws_labels",              type = "boolean", default = true,                          label = "AWS Label Detection" },
       { key = "do_aws_celebrities",         type = "boolean", default = true,                          label = "AWS Celebrity Recognition" },
       { key = "do_aws_faces",               type = "boolean", default = false,                         label = "AWS Face Detection" },
@@ -28,11 +27,11 @@ function plugin.schema()
       { key = "proxy_format",   type = "enum",    default = "mp4",    choices ={"mp4", "webm"}, label = "Proxy Format" },
       { key = "proxy_codec",    type = "enum",    default = "libx264", choices ={"libx264", "h264_nvenc", "h264_videotoolbox", "libvpx-vp9"}, label = "Video Codec" },
       { key = "thumbnail_size", type = "enum",    default = "320x180", choices ={"320x180", "640x360", "1280x720"}, label = "Thumbnail Size" },
-      { key = "thumbnail_dpi",  type = "integer", default = 72,                                         label = "Thumbnail DPI" },
-      -- Whisper transcription
-      { key = "model", type = "string",  default = "C:\\Whisper\\models\\ggml-base.en.bin",            label = "Whisper Model Path" },
-      { key = "language", type = "string",  default = "en",                                            label = "Whisper Language" },
-      { key = "threads", type = "integer",  default = 4,                                               label = "Whisper Threads" },
+      { key = "thumbnail_dpi",  type = "integer", default = 72,                                        label = "Thumbnail DPI" },
+      -- AWS Transcribe
+      { key = "do_transcription",           type = "boolean", default = true,                          label = "Enable Transcription" },
+      { key = "language", type = "string",  default = "en", choices={"en-US","en-AU","en-GB","fr-FR","de-DE","es-ES","es-MX","es-US"}, label = "Language"},
+      { key = "max_timeout_seconds" ,       type = "integer",  default = 600,                          label = "AWS Transcribe Max Timeout (Seconds)" },
   })
 end
 
@@ -46,11 +45,9 @@ function plugin.execute()
     ---@type FfmpegPipeline
     local ffmpeg_pipeline = require("ffmpeg_pipeline")
     local aws = require("aws_pipeline")
-    local whisper = require("whisper_pipeline")
 
     local aws_options = aws.make_options_object(settings)
     local ffmpeg_opts = ffmpeg_pipeline.make_options_object(settings)
-    local whisper_opts = whisper.make_options_object(settings)
 
     -- set statuses to "INITIALIZING" for all products
     rio:product_status(rio_utils.get_product_name("proxy"), rio_utils.get_status_name("initializing"), nil)
@@ -125,8 +122,8 @@ function plugin.execute()
 
     -- transcribe audio from the proxy
     if (settings.do_transcription) then
-        local wav_path = rio_utils.create_wav_filename(input, working_directory)
-        local transcription_result, transcription_err = whisper.transcribe_audio(proxy_path, wav_path, whisper_opts)
+        local mp3_path = rio_utils.create_mp3_filename(input, working_directory)
+        local transcription_result, transcription_err = aws.transcribe_audio(proxy_path, mp3_path, aws_options.s3_bucket, aws_options)
         if not transcription_result then
             rio:log_error("Failed to transcribe audio:" .. tostring(transcription_err))
             rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("failure"), tostring(transcription_err))
