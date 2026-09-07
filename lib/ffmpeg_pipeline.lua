@@ -219,7 +219,21 @@ local function run_proxy_command(input_path, extra_audio, output_path, opts)
     else
         rio:log_info("Proxy command succeeded: " .. tostring(cmd))
     end
-    return get_video_metadata(output_path)
+
+    -- run_quiet_command's exit-status check is known-unreliable on the real
+    -- host (see rio_utils.run_command), and even a genuinely-zero encoder
+    -- failure (e.g. NVENC rejecting the driver) can still leave ffmpeg's mp4
+    -- muxer having finalized a valid-but-empty container. ffprobe parses that
+    -- fine, so a video-less metadata table is the only reliable signal that
+    -- the proxy is actually unusable.
+    local metadata, meta_err = get_video_metadata(output_path)
+    if not metadata then
+        return nil, "ffmpeg proxy produced no readable output\n" .. tostring(meta_err) .. "\nCommand: " .. cmd
+    end
+    if not metadata.video_codec or not (metadata.duration_seconds and metadata.duration_seconds > 0) then
+        return nil, "ffmpeg proxy has no video stream or zero duration (encoder likely failed silently)\nCommand: " .. cmd
+    end
+    return metadata
 end
 
 --- Transcode a single self-contained video file to a proxy (normal mp4/mov/mxf

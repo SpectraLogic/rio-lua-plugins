@@ -97,6 +97,17 @@ local function create_wav_filename(path, output_path)
     return join_path(output_path, stem .. ".wav")
 end
 
+--- Build an MP3 output path for AWS transcription: `<output_path><stem>.mp3`.
+--- Derives the stem from the original source `path` (like create_proxy_name etc.),
+--- not from an already-suffixed proxy path, so callers get a clean, single name.
+---@param path string  source file path (the original asset, not the proxy)
+---@param output_path string  directory prefix for the result
+---@return string  full mp3 path
+local function create_mp3_filename(path, output_path)
+    local stem = sanitize_filename(split_file_name(path))
+    return join_path(output_path, stem .. ".mp3")
+end
+
 --- Single-quote (Unix) or double-quote (Windows) a value for safe use as one shell argument.
 ---@param path any  value to quote (coerced via tostring)
 ---@return string  shell-safe quoted string
@@ -168,6 +179,20 @@ local function file_exists(path)
     end
     file:close()
     return true
+end
+
+--- Block the current thread for approximately the given duration, for polling
+--- loops (e.g. an async AWS job). Shells out rather than busy-waiting since
+--- Lua's standard library has no sleep.
+---@param seconds number
+local function sleep_seconds(seconds)
+    if IS_WINDOWS then
+        -- `timeout` refuses to run without an interactive console; `ping` is
+        -- the standard sleep substitute in Windows batch scripting.
+        os.execute("ping -n " .. (math.floor(seconds) + 1) .. " 127.0.0.1 >NUL")
+    else
+        os.execute("sleep " .. tostring(seconds))
+    end
 end
 
 --- Join command parts with spaces, skipping nil entries.
@@ -402,6 +427,7 @@ end
 ---@field run_command fun(cmd: string): string|nil # Run a command, return stdout (nil + logs stderr on failure).
 ---@field run_quiet_command fun(cmd: string): boolean, string # Run a command for its side effects; true on success, plus combined stdout+stderr for diagnostics.
 ---@field join_command fun(parts: (string|nil)[]): string # Join command parts with spaces, dropping nils.
+---@field sleep_seconds fun(seconds: number) # Block for approximately the given duration (for polling loops).
 ---@field file_exists fun(path: string): boolean # Return true when a file exists and is readable.
 ---@field parse_num fun(s: string|nil): number|nil # Parse the leading number from a string.
 ---@field parse_bytes fun(s: string|nil): number|nil # Parse a byte count with B/K/M/G suffix into bytes.
@@ -422,6 +448,7 @@ return {
     create_sidecar_name = create_sidecar_name,
     create_preview_name = create_preview_name,
     create_wav_filename = create_wav_filename,
+    create_mp3_filename = create_mp3_filename,
     merge_as_strings = merge_as_strings,
     describe_value = describe_value,
     to_array = to_array,
@@ -429,6 +456,7 @@ return {
     run_command = run_command,
     run_quiet_command = run_quiet_command,
     join_command = join_command,
+    sleep_seconds = sleep_seconds,
     file_exists = file_exists,
     parse_num = parse_num,
     parse_bytes = parse_bytes,
