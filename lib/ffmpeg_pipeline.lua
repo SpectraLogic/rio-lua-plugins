@@ -133,7 +133,9 @@ local function get_video_metadata(video_path)
 
     local probe_json, _, decode_err = json.decode(output)
     if not probe_json then
-        return nil, "Failed to decode ffprobe output: " .. tostring(decode_err)
+        -- include the raw output inline since callers only log err, not the debug line above
+        -- (which requires DEBUG level enabled) -- decode failures are otherwise unreadable in prod
+        return nil, "Failed to decode ffprobe output: " .. tostring(decode_err) .. "\nraw output: " .. tostring(output)
     end
 
     local video_stream = first_stream(probe_json.streams, "video")
@@ -274,7 +276,14 @@ local function resolve_essence_paths(paths)
         local path = array[i]
         local meta, err = get_video_metadata(path)
         if not meta then
-            rio:log_warn("resolve_essence_paths: skipping unprobeable input '" .. tostring(path) .. "': " .. tostring(err))
+            if rio_utils.is_directory(path) then
+                -- server may now hand back a package/bundle directory instead of flat essence
+                -- paths -- list it so the real contents show up in the log for diagnosis
+                local entries = rio_utils.list_directory(path)
+                rio:log_warn("resolve_essence_paths: '" .. tostring(path) .. "' is a directory, not a file -- contents: " .. table.concat(entries, ", "))
+            else
+                rio:log_warn("resolve_essence_paths: skipping unprobeable input '" .. tostring(path) .. "': " .. tostring(err))
+            end
             goto continue
         end
 
