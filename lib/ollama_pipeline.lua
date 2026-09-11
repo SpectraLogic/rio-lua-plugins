@@ -28,12 +28,13 @@ Return ONLY valid JSON - no markdown fences, no explanation.
 -- giving up on what's otherwise a healthy server.
 local MAX_RETRIES = 3
 local RETRY_DELAY_SECONDS = 5
+local DEFAULT_MAX_TAGS_PER_FRAME = 15
 
 local function make_options_object(config)
     return {
         url = config.ollama_url,
         model = config.ollama_model,
-        max_tags_per_frame = config.max_tags_per_frame,
+        max_tags_per_frame = tonumber(config.max_tags_per_frame) or DEFAULT_MAX_TAGS_PER_FRAME,
     }
 end
 

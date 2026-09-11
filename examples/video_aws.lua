@@ -31,10 +31,10 @@ function plugin.schema()
       -- AWS Transcribe
       { key = "do_transcription",           type = "boolean", default = true,                          label = "Enable Transcription" },
       { key = "language", type = "string",  default = "en", choices={"en-US","en-AU","en-GB","fr-FR","de-DE","es-ES","es-MX","es-US"}, label = "Language"},
-      { key = "max_timeout_seconds" ,       type = "integer",  default = 600,                          label = "AWS Transcribe Max Timeout (Seconds)" },
+      { key = "max_timeout_seconds" ,       type = "integer", default = 600,                           label = "AWS Transcribe Max Timeout (Seconds)" },
       -- AWS Bedrock
-      { key = "do_bedrock_summary",         type = "boolean", default = true,                          label = "Generate AI Clip Summary (Bedrock)" },
-      { key = "bedrock_model_id",           type = "string",  default = "us.amazon.nova-2-lite-v1:0", label = "Bedrock Model ID" },
+      { key = "do_bedrock_summary",         type = "boolean", default = false,                         label = "Generate AI Clip Summary (Bedrock)" },
+      { key = "bedrock_model_id",           type = "string",  default = "us.amazon.nova-2-lite-v1:0",  label = "Bedrock Model ID" },
       { key = "bedrock_region",             type = "string",  default = "us-east-1",                   label = "Bedrock AWS Region" },
   })
 end
@@ -58,7 +58,7 @@ function plugin.execute()
     rio:product_status(rio_utils.get_product_name("thumbnail"), rio_utils.get_status_name("initializing"), nil)
     rio:product_status(rio_utils.get_product_name("sidecar"), rio_utils.get_status_name("initializing"), nil)
     rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("initializing"), nil)
-    if (settings.do_transcription) then
+    if (aws_options.do_transcription) then
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("initializing"), nil)
     end
 
@@ -126,7 +126,7 @@ function plugin.execute()
 
     -- transcribe audio from the proxy
     local transcription_result
-    if (settings.do_transcription) then
+    if (aws_options.do_transcription) then
         local mp3_path = rio_utils.create_mp3_filename(input, working_directory)
         local transcription_err
         transcription_result, transcription_err = aws.transcribe_audio(proxy_path, mp3_path, aws_options.s3_bucket, aws_options)

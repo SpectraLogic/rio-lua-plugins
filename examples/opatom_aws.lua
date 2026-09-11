@@ -54,7 +54,7 @@ function plugin.execute()
     rio:product_status(rio_utils.get_product_name("thumbnail"), rio_utils.get_status_name("initializing"), nil)
     rio:product_status(rio_utils.get_product_name("sidecar"), rio_utils.get_status_name("initializing"), nil)
     rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("initializing"), nil)
-    if (settings.do_transcription) then
+    if (aws.do_transcription) then
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("initializing"), nil)
     end
 
@@ -127,7 +127,7 @@ function plugin.execute()
 
     -- transcribe audio from the proxy
     local transcription_result
-    if (settings.do_transcription) then
+    if (aws_options.do_transcription) then
         local mp3_path = rio_utils.create_mp3_filename(input, working_directory)
         local transcription_err
         transcription_result, transcription_err = aws.transcribe_audio(proxy_path, mp3_path, aws_options.s3_bucket, aws_options)

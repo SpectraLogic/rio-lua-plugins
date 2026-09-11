@@ -24,6 +24,7 @@ local function make_options_object(config)
         model = config.model,
         language = config.language,
         threads = config.threads,
+        do_transcription = rio_utils.to_boolean(config.do_transcription),
     }
 end
 

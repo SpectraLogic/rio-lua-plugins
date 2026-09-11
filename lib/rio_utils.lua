@@ -297,6 +297,24 @@ local function trim(value)
     return tostring(value or ""):match("^%s*(.-)%s*$")
 end
 
+--- Coerce a settings value (which may already be a boolean, or may arrive as
+--- a string/number from JSON or the rio bridge) into a real boolean.
+---@param value any
+---@return boolean
+local function to_boolean(value)
+    if type(value) == "boolean" then
+        return value
+    end
+    if value == nil then
+        return false
+    end
+    if type(value) == "number" then
+        return value ~= 0
+    end
+    local lowered = tostring(value):lower()
+    return lowered == "true" or lowered == "1" or lowered == "yes"
+end
+
 --- Return a path's lowercase file extension (without the dot), or nil.
 ---@param path string
 ---@return string|nil
@@ -482,6 +500,7 @@ end
 ---@field parse_bytes fun(s: string|nil): number|nil # Parse a byte count with B/K/M/G suffix into bytes.
 ---@field parse_ratio fun(value: string|nil): number|nil # Parse "num/den" or a plain number.
 ---@field trim fun(value: any): string # Trim surrounding whitespace.
+---@field to_boolean fun(value: any): boolean # Coerce a settings value (boolean/string/number) into a real boolean.
 ---@field get_file_extension fun(path: string): string|nil # Lowercase extension without the dot.
 ---@field format_timestamp fun(total_seconds: number): string # Seconds -> `HH:MM:SS.mmm`.
 ---@field format_timestamp_for_filename fun(total_seconds: number): string # Seconds -> filename-safe `HH-MM-SS_mmm`.
@@ -513,6 +532,7 @@ return {
     parse_bytes = parse_bytes,
     parse_ratio = parse_ratio,
     trim = trim,
+    to_boolean = to_boolean,
     get_file_extension = get_file_extension,
     format_timestamp = format_timestamp,
     format_timestamp_for_filename = format_timestamp_for_filename,

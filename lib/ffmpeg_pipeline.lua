@@ -19,6 +19,18 @@ local magick_pipeline = require("magick_pipeline")
 local FFMPEG = "ffmpeg"
 local FFPROBE = "ffprobe"
 
+local function make_options_object(opts)
+    opts = opts or {}
+    return {
+        frames_to_sample = tonumber(opts.frames_to_sample) or 5,
+        max_tags_per_frame = tonumber(opts.max_tags_per_frame) or 15,
+        proxy_format = opts.proxy_format or "mp4",
+        proxy_codec = opts.proxy_codec or "libx264",
+        thumbnail_size = opts.thumbnail_size or "320x180",
+        thumbnail_dpi = tonumber(opts.thumbnail_dpi) or 72,
+    }
+end
+
 -- General support for popular codecs: libxh264, h264_nvenc, h264_videotoolbox, libvpx-vp9, etc. 
 -- this is a separate function so that the calling script could override it to support other codecs
 -- or handle different ffmpeg params without a new Rio build.
@@ -97,18 +109,6 @@ local function first_stream(streams, codec_type)
         end
     end
     return nil
-end
-
-local function make_options_object(opts)
-    opts = opts or {}
-    return {
-        frames_to_sample = tonumber(opts.frames_to_sample) or 5,
-        max_tags_per_frame = tonumber(opts.max_tags_per_frame) or 15,
-        proxy_format = opts.proxy_format or "mp4",
-        proxy_codec = opts.proxy_codec or "libx264",
-        thumbnail_size = opts.thumbnail_size or "320x180",
-        thumbnail_dpi = opts.thumbnail_dpi or 72,
-    }
 end
 
 --- Probe a video with ffprobe for technical metadata.
