@@ -19,6 +19,18 @@ local magick_pipeline = require("magick_pipeline")
 local FFMPEG = "ffmpeg"
 local FFPROBE = "ffprobe"
 
+local function make_options_object(opts)
+    opts = opts or {}
+    return {
+        frames_to_sample = tonumber(opts.frames_to_sample) or 5,
+        max_tags_per_frame = tonumber(opts.max_tags_per_frame) or 15,
+        proxy_format = opts.proxy_format or "mp4",
+        proxy_codec = opts.proxy_codec or "libx264",
+        thumbnail_size = opts.thumbnail_size or "320x180",
+        thumbnail_dpi = tonumber(opts.thumbnail_dpi) or 72,
+    }
+end
+
 -- General support for popular codecs: libxh264, h264_nvenc, h264_videotoolbox, libvpx-vp9, etc. 
 -- this is a separate function so that the calling script could override it to support other codecs
 -- or handle different ffmpeg params without a new Rio build.
@@ -99,18 +111,6 @@ local function first_stream(streams, codec_type)
     return nil
 end
 
-local function make_options_object(opts)
-    opts = opts or {}
-    return {
-        frames_to_sample = tonumber(opts.frames_to_sample) or 5,
-        max_tags_per_frame = tonumber(opts.max_tags_per_frame) or 15,
-        proxy_format = opts.proxy_format or "mp4",
-        proxy_codec = opts.proxy_codec or "libx264",
-        thumbnail_size = opts.thumbnail_size or "320x180",
-        thumbnail_dpi = opts.thumbnail_dpi or 72,
-    }
-end
-
 --- Probe a video with ffprobe for technical metadata.
 ---@param video_path string  path to the video file
 ---@return table|nil metadata  { format, duration_seconds, file_size_bytes, width, height, proxy_codec, audio_codec, frame_rate, pixel_format, field_order, operational_pattern, start_timecode, umid }, or nil on failure
@@ -133,7 +133,9 @@ local function get_video_metadata(video_path)
 
     local probe_json, _, decode_err = json.decode(output)
     if not probe_json then
-        return nil, "Failed to decode ffprobe output: " .. tostring(decode_err)
+        -- include the raw output inline since callers only log err, not the debug line above
+        -- (which requires DEBUG level enabled) -- decode failures are otherwise unreadable in prod
+        return nil, "Failed to decode ffprobe output: " .. tostring(decode_err) .. "\nraw output: " .. tostring(output)
     end
 
     local video_stream = first_stream(probe_json.streams, "video")
@@ -274,7 +276,14 @@ local function resolve_essence_paths(paths)
         local path = array[i]
         local meta, err = get_video_metadata(path)
         if not meta then
-            rio:log_warn("resolve_essence_paths: skipping unprobeable input '" .. tostring(path) .. "': " .. tostring(err))
+            if rio_utils.is_directory(path) then
+                -- server may now hand back a package/bundle directory instead of flat essence
+                -- paths -- list it so the real contents show up in the log for diagnosis
+                local entries = rio_utils.list_directory(path)
+                rio:log_warn("resolve_essence_paths: '" .. tostring(path) .. "' is a directory, not a file -- contents: " .. table.concat(entries, ", "))
+            else
+                rio:log_warn("resolve_essence_paths: skipping unprobeable input '" .. tostring(path) .. "': " .. tostring(err))
+            end
             goto continue
         end
 

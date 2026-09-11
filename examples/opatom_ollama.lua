@@ -13,7 +13,6 @@ function plugin.schema()
       -- Ollama analysis
       { key = "frames_to_sample",           type = "integer", default = 10,       min = 1, max = 30,   label = "Frames to Sample" },
       { key = "max_tags_per_frame",         type = "integer", default = 20,       min = 1, max = 50,   label = "Max Tags" },
-      { key = "do_transcription",           type = "boolean", default = true,                          label = "Enable Transcription" },
       { key = "ollama_url",                 type = "string",  default = "http://localhost:11434",      label = "Ollama URL" },
       { key = "ollama_model",               type = "string",  default = "llava",                       label = "Ollama Model" },
       -- Proxy / thumbnail
@@ -23,6 +22,7 @@ function plugin.schema()
       { key = "thumbnail_size", type = "enum",    default = "320x180", choices ={"320x180", "640x360", "1280x720"}, label = "Thumbnail Size" },
       { key = "thumbnail_dpi",  type = "integer", default = 72,                                        label = "Thumbnail DPI" },
       -- Whisper transcription
+      { key = "do_transcription",           type = "boolean", default = true,                          label = "Enable Transcription" },
       { key = "model", type = "string",  default = "C:\\Whisper\\models\\ggml-base.en.bin",            label = "Whisper Model Path" },
       { key = "language", type = "string",  default = "en",                                            label = "Whisper Language" },
       { key = "threads", type = "integer",  default = 4,                                               label = "Whisper Threads" },
@@ -52,7 +52,7 @@ function plugin.execute()
     local ffmpeg_opts = ffmpeg_pipeline.make_options_object(settings)
     local whisper_opts = whisper.make_options_object(settings)
 
-    if (settings.do_transcription) then
+    if (whisper_opts.do_transcription) then
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("initializing"), nil)
     end
 
@@ -122,7 +122,7 @@ function plugin.execute()
     rio:log_debug("All metadata: " .. json.encode(all_technical_metadata, { indent = true }))
     rio:save_technical_metadata(all_technical_metadata)
 
-    if (settings.do_transcription) then
+    if (whisper_opts.do_transcription) then
         -- transcribe audio from the video proxy
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("active"), nil)
         local wav_path = rio_utils.create_wav_filename(input, working_directory)

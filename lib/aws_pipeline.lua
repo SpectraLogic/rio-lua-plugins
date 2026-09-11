@@ -17,19 +17,22 @@ local FFMPEG = "ffmpeg"
 
 --- Extract AWS options from a settings object
 --- @param config table  settings object with AWS options
---- @return table  AWS options table with keys: s3_bucket, confidence, do_labels, do_celebrities, do_faces, do_text, do_moderation
+--- @return table  AWS options table with keys: s3_bucket, confidence, do_labels, do_celebrities, do_faces, do_text, do_moderation, do_bedrock_summary, bedrock_model_id, bedrock_region
 local function make_options_object(config)
     return {
         s3_bucket = config.s3_bucket,
         confidence = tonumber(config.aws_confidence_threshold) or 80,
-        do_labels = config.do_aws_labels,
-        do_celebrities = config.do_aws_celebrities,
-        do_faces = config.do_aws_faces,
-        do_text = config.do_aws_text,
-        do_moderation = config.do_aws_moderation,
+        do_labels = rio_utils.to_boolean(config.do_aws_labels),
+        do_celebrities = rio_utils.to_boolean(config.do_aws_celebrities),
+        do_faces = rio_utils.to_boolean(config.do_aws_faces),
+        do_text = rio_utils.to_boolean(config.do_aws_text),
+        do_moderation = rio_utils.to_boolean(config.do_aws_moderation),
         profile = config.aws_profile,
         language = config.language,
         max_timeout_seconds = config.max_timeout_seconds,
+        do_bedrock_summary = rio_utils.to_boolean(config.do_bedrock_summary),
+        bedrock_model_id = config.bedrock_model_id,
+        bedrock_region = config.bedrock_region,
     }
 end
 
@@ -357,14 +360,110 @@ local function transcribe_audio(proxy_path, mp3_path, s3_bucket, opts)
     }
 end
 
+local SUMMARY_PROMPT_TEMPLATE = [[
+You are writing a brief, factual summary of a video clip for a media asset management system.
+Use the transcript, detected visual tags, and recognized people below to write a single concise
+paragraph (2-4 sentences) describing the clip's content. Write it as a natural, free-standing
+description -- do not mention that you were given a transcript, tags, or labels, and do not
+use markdown.
+
+Transcript:
+%s
+
+Detected visual tags: %s
+
+Recognized people: %s
+]]
+
+--- Pull "prefix1", "prefix2", ... values out of a flat metadata table into an ordered array.
+---@param metadata table
+---@param prefix string
+---@return string[]
+local function extract_indexed_values(metadata, prefix)
+    local values = {}
+    local index = 1
+    while metadata[prefix .. index] do
+        values[#values + 1] = metadata[prefix .. index]
+        index = index + 1
+    end
+    return values
+end
+
+--- Summarize a whole clip by sending its transcript plus aggregated Rekognition
+--- tags/celebrities to an AWS Bedrock text model and asking for a short prose
+--- description. Uses the Bedrock Converse API rather than raw invoke-model,
+--- since Converse normalizes the request/response message format across model
+--- providers (Anthropic, Amazon Nova, Meta, ...) -- invoke-model requires
+--- speaking each provider's own native body schema.
+---@param transcript_text string|nil  full transcript text from transcribe_audio, if any
+---@param frame_metadata table  aggregated frame metadata from ffmpeg_pipeline.aggregate_frame_results (reads ai_tagN / ai_celebrityN)
+---@param opts? { bedrock_model_id?: string, bedrock_region?: string, profile?: string }
+---@return string|nil summary  a short prose description of the clip, or nil on failure
+---@return string? err
+local function summarize_clip(transcript_text, frame_metadata, opts)
+    opts = opts or {}
+
+    local tags = extract_indexed_values(frame_metadata or {}, "ai_tag")
+    local celebrities = extract_indexed_values(frame_metadata or {}, "ai_celebrity")
+    local transcript_excerpt = rio_utils.trim(transcript_text or "")
+
+    local prompt = string.format(
+        SUMMARY_PROMPT_TEMPLATE,
+        transcript_excerpt ~= "" and transcript_excerpt or "(no speech detected)",
+        #tags > 0 and table.concat(tags, ", ") or "(none detected)",
+        #celebrities > 0 and table.concat(celebrities, ", ") or "(none detected)"
+    )
+
+    local model_id = opts.bedrock_model_id or "us.amazon.nova-2-lite-v1:0"
+    local messages = json.encode({
+        { role = "user", content = { { text = prompt } } },
+    })
+    local inference_config = json.encode({ maxTokens = 300 })
+
+    local cmd = rio_utils.join_command({
+        "aws bedrock-runtime converse",
+        "--model-id " .. rio_utils.shell_quote(model_id),
+        "--messages " .. rio_utils.shell_quote(messages),
+        "--inference-config " .. rio_utils.shell_quote(inference_config),
+        opts.bedrock_region and ("--region " .. rio_utils.shell_quote(opts.bedrock_region)) or nil,
+        opts.profile and ("--profile " .. rio_utils.shell_quote(opts.profile)) or nil,
+    })
+    -- Same caveat as elsewhere in this file: the close-status can report
+    -- success even when the aws CLI actually failed, so also check its
+    -- output for the CLI's own "An error occurred (...)" failure marker.
+    local ok, output = rio_utils.run_quiet_command(cmd)
+    local aws_err = output and output:match("(An error occurred[^\n]*)")
+    if not ok or aws_err then
+        return nil, "aws bedrock-runtime converse failed: " .. (aws_err or output or cmd)
+    end
+
+    local response_json, _, decode_err = json.decode(output)
+    if not response_json then
+        return nil, "failed to decode bedrock converse response: " .. tostring(decode_err)
+    end
+
+    local content_text = response_json.output
+        and response_json.output.message
+        and response_json.output.message.content
+        and response_json.output.message.content[1]
+        and response_json.output.message.content[1].text
+    if not content_text then
+        return nil, "bedrock converse response missing content text: " .. tostring(output)
+    end
+
+    return rio_utils.trim(content_text)
+end
+
 ---@class AwsPipeline
 ---@field describe_image fun(image_path: string, s3_bucket: string, opts?: table): table|nil, string? # Analyze an image with Rekognition; returns aggregated metadata.
 ---@field describe_frames fun(frames: table[], s3_bucket: string, opts?: table): table[], string? # Analyze a list of frame records.
 ---@field transcribe_audio fun(audio_path: string, s3_bucket: string, opts?: table): table|nil, string? # Upload audio, run AWS Transcribe, return { text, word_count, char_count, job_name }.
+---@field summarize_clip fun(transcript_text: string|nil, frame_metadata: table, opts?: table): string|nil, string? # Ask Bedrock for a short prose summary of the whole clip.
 
 return {
     describe_image = describe_image,
     describe_frames = describe_frames,
     transcribe_audio = transcribe_audio,
+    summarize_clip = summarize_clip,
     make_options_object = make_options_object,
 }

@@ -31,7 +31,11 @@ function plugin.schema()
       -- AWS Transcribe
       { key = "do_transcription",           type = "boolean", default = true,                          label = "Enable Transcription" },
       { key = "language", type = "string",  default = "en", choices={"en-US","en-AU","en-GB","fr-FR","de-DE","es-ES","es-MX","es-US"}, label = "Language"},
-      { key = "max_timeout_seconds" ,       type = "integer",  default = 600,                          label = "AWS Transcribe Max Timeout (Seconds)" },
+      { key = "max_timeout_seconds" ,       type = "integer", default = 600,                           label = "AWS Transcribe Max Timeout (Seconds)" },
+      -- AWS Bedrock
+      { key = "do_bedrock_summary",         type = "boolean", default = false,                         label = "Generate AI Clip Summary (Bedrock)" },
+      { key = "bedrock_model_id",           type = "string",  default = "us.amazon.nova-2-lite-v1:0",  label = "Bedrock Model ID" },
+      { key = "bedrock_region",             type = "string",  default = "us-east-1",                   label = "Bedrock AWS Region" },
   })
 end
 
@@ -54,7 +58,7 @@ function plugin.execute()
     rio:product_status(rio_utils.get_product_name("thumbnail"), rio_utils.get_status_name("initializing"), nil)
     rio:product_status(rio_utils.get_product_name("sidecar"), rio_utils.get_status_name("initializing"), nil)
     rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("initializing"), nil)
-    if (settings.do_transcription) then
+    if (aws_options.do_transcription) then
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("initializing"), nil)
     end
 
@@ -121,9 +125,11 @@ function plugin.execute()
     rio:save_technical_metadata(all_technical_metadata)
 
     -- transcribe audio from the proxy
-    if (settings.do_transcription) then
+    local transcription_result
+    if (aws_options.do_transcription) then
         local mp3_path = rio_utils.create_mp3_filename(input, working_directory)
-        local transcription_result, transcription_err = aws.transcribe_audio(proxy_path, mp3_path, aws_options.s3_bucket, aws_options)
+        local transcription_err
+        transcription_result, transcription_err = aws.transcribe_audio(proxy_path, mp3_path, aws_options.s3_bucket, aws_options)
         if not transcription_result then
             rio:log_error("Failed to transcribe audio:" .. tostring(transcription_err))
             rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("failure"), tostring(transcription_err))
@@ -163,6 +169,19 @@ function plugin.execute()
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("failure"), "Failed to aggregate frame results")
         return
     else
+        if settings.do_bedrock_summary then
+            local summary, summary_err = aws.summarize_clip(
+                transcription_result and transcription_result.text,
+                sample_frame_metadata,
+                aws_options
+            )
+            if summary then
+                sample_frame_metadata.ai_description = summary
+            else
+                rio:log_warn("Failed to generate Bedrock clip summary: " .. tostring(summary_err))
+            end
+        end
+
         rio:log_debug("AI metadata: " .. json.encode(sample_frame_metadata, { indent = true }))
         rio:save_ai_metadata(sample_frame_metadata)
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("completed"), nil)

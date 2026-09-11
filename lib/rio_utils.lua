@@ -181,6 +181,33 @@ local function file_exists(path)
     return true
 end
 
+--- Return whether path is a directory (file_exists() is false for directories
+--- on most platforms, which is otherwise indistinguishable from "missing").
+---@param path string
+---@return boolean
+local function is_directory(path)
+    if IS_WINDOWS then
+        return os.execute('if exist "' .. path .. '\\*" (exit 0) else (exit 1)') == true
+    end
+    return os.execute("[ -d " .. shell_quote(path) .. " ]") == true
+end
+
+--- List the immediate contents of a directory (one name per entry, no path
+--- prefix). Empty on error -- diagnostic use only, never throws.
+---@param path string
+---@return string[]
+local function list_directory(path)
+    local cmd = IS_WINDOWS and ("dir /b " .. shell_quote(path)) or ("ls -1 " .. shell_quote(path))
+    local output = run_command(cmd)
+    local entries = {}
+    if output then
+        for name in output:gmatch("[^\r\n]+") do
+            entries[#entries + 1] = name
+        end
+    end
+    return entries
+end
+
 --- Block the current thread for approximately the given duration, for polling
 --- loops (e.g. an async AWS job). Shells out rather than busy-waiting since
 --- Lua's standard library has no sleep.
@@ -268,6 +295,24 @@ end
 ---@return string
 local function trim(value)
     return tostring(value or ""):match("^%s*(.-)%s*$")
+end
+
+--- Coerce a settings value (which may already be a boolean, or may arrive as
+--- a string/number from JSON or the rio bridge) into a real boolean.
+---@param value any
+---@return boolean
+local function to_boolean(value)
+    if type(value) == "boolean" then
+        return value
+    end
+    if value == nil then
+        return false
+    end
+    if type(value) == "number" then
+        return value ~= 0
+    end
+    local lowered = tostring(value):lower()
+    return lowered == "true" or lowered == "1" or lowered == "yes"
 end
 
 --- Return a path's lowercase file extension (without the dot), or nil.
@@ -365,6 +410,12 @@ local function describe_value(value, label)
     label = label or "value"
     local lines = { label .. " = " .. tostring(value) .. " (type: " .. type(value) .. ")" }
 
+    -- unconditional, so a server-side type/shape change shows up even when pairs()/to_array() succeed
+    local class_ok, class_name = pcall(function() return value:getClass():getName() end)
+    if class_ok then
+        lines[#lines + 1] = "  java class: " .. tostring(class_name)
+    end
+
     local paired_ok = pcall(function()
         for k, v in pairs(value) do
             lines[#lines + 1] = "  [" .. tostring(k) .. "] (" .. type(v) .. ") = " .. tostring(v)
@@ -379,7 +430,20 @@ local function describe_value(value, label)
                 lines[#lines + 1] = "  [" .. i .. "] = " .. tostring(array[i])
             end
         else
-            lines[#lines + 1] = "  (to_array() also found nothing -- no further introspection possible)"
+            -- last resort: ask the underlying Java object to identify itself via reflection,
+            -- since LuaJ exposes every public method (including inherited Object methods) on
+            -- coerced Java userdata even when the object has no Lua-friendly pairs()/size()/[]
+            local class_ok, class_name = pcall(function() return value:getClass():getName() end)
+            local tostr_ok, java_tostring = pcall(function() return value:toString() end)
+            if class_ok then
+                lines[#lines + 1] = "  java class: " .. tostring(class_name)
+            end
+            if tostr_ok then
+                lines[#lines + 1] = "  java toString(): " .. tostring(java_tostring)
+            end
+            if not class_ok and not tostr_ok then
+                lines[#lines + 1] = "  (to_array() and Java reflection both found nothing -- no further introspection possible)"
+            end
         end
     end
 
@@ -420,6 +484,7 @@ end
 ---@field create_sidecar_name fun(path: string, extension?: string, output_path: string): string # Build a `<dir><stem>-Sprite.<ext>` path.
 ---@field create_preview_name fun(path: string, extension?: string, output_path: string): string # Build a `<dir><stem>-Preview.<ext>` path.
 ---@field create_wav_filename fun(path: string, output_path: string): string # Build a `<dir><stem>.wav` path for whisper transcription.
+---@field create_mp3_filename fun(path: string, output_path: string): string # Build a `<dir><stem>.mp3` path for AWS transcription.
 ---@field merge_as_strings fun(dst: table, src: table, prefix?: string) # Copy src into dst, stringifying values (for save_techbical_metadata).
 ---@field describe_value fun(value: any, label?: string): string # Crash-proof debug dump of a value's type and contents (handles userdata from the rio bridge).
 ---@field to_array fun(value: any): table, number # Coerce a table, Java List userdata, or Java array userdata into a real 1-based Lua array.
@@ -429,10 +494,13 @@ end
 ---@field join_command fun(parts: (string|nil)[]): string # Join command parts with spaces, dropping nils.
 ---@field sleep_seconds fun(seconds: number) # Block for approximately the given duration (for polling loops).
 ---@field file_exists fun(path: string): boolean # Return true when a file exists and is readable.
+---@field is_directory fun(path: string): boolean # Return true when path is a directory.
+---@field list_directory fun(path: string): string[] # List a directory's immediate entry names (diagnostic use, empty on error).
 ---@field parse_num fun(s: string|nil): number|nil # Parse the leading number from a string.
 ---@field parse_bytes fun(s: string|nil): number|nil # Parse a byte count with B/K/M/G suffix into bytes.
 ---@field parse_ratio fun(value: string|nil): number|nil # Parse "num/den" or a plain number.
 ---@field trim fun(value: any): string # Trim surrounding whitespace.
+---@field to_boolean fun(value: any): boolean # Coerce a settings value (boolean/string/number) into a real boolean.
 ---@field get_file_extension fun(path: string): string|nil # Lowercase extension without the dot.
 ---@field format_timestamp fun(total_seconds: number): string # Seconds -> `HH:MM:SS.mmm`.
 ---@field format_timestamp_for_filename fun(total_seconds: number): string # Seconds -> filename-safe `HH-MM-SS_mmm`.
@@ -458,10 +526,13 @@ return {
     join_command = join_command,
     sleep_seconds = sleep_seconds,
     file_exists = file_exists,
+    is_directory = is_directory,
+    list_directory = list_directory,
     parse_num = parse_num,
     parse_bytes = parse_bytes,
     parse_ratio = parse_ratio,
     trim = trim,
+    to_boolean = to_boolean,
     get_file_extension = get_file_extension,
     format_timestamp = format_timestamp,
     format_timestamp_for_filename = format_timestamp_for_filename,

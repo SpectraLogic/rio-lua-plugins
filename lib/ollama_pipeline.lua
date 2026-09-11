@@ -10,6 +10,7 @@
 
 local lua_fetch = require("lua_fetch")
 local json = require("dkjson")
+local rio_utils = require("rio_utils")
 
 local b64 = require("base64")
 
@@ -21,12 +22,41 @@ Focus on subjects, objects, colors, mood, style, and setting.
 Return ONLY valid JSON - no markdown fences, no explanation.
 ]]
 
+-- Ollama running locally can transiently 500 ("connection refused", "model
+-- runner has unexpectedly stopped") under concurrent load from multiple
+-- LuaWorkers hitting the same model runner -- worth a few retries before
+-- giving up on what's otherwise a healthy server.
+local MAX_RETRIES = 3
+local RETRY_DELAY_SECONDS = 5
+local DEFAULT_MAX_TAGS_PER_FRAME = 15
+
 local function make_options_object(config)
     return {
         url = config.ollama_url,
         model = config.ollama_model,
-        max_tags_per_frame = config.max_tags_per_frame,
+        max_tags_per_frame = tonumber(config.max_tags_per_frame) or DEFAULT_MAX_TAGS_PER_FRAME,
     }
+end
+
+--- Cheaply confirm the Ollama server is reachable, without loading a model
+--- (unlike /api/generate). Use this to fail fast with a clear message instead
+--- of burning through describe_image's per-frame retries when the server is
+--- fully down.
+---@param opts? { url?: string }
+---@return boolean is_up
+---@return string? err  reason it's not reachable (status code or transport error)
+local function is_server_available(opts)
+    opts = opts or {}
+    local url = (opts.url or "http://localhost:11434") .. "/api/tags"
+
+    local ok, resp = pcall(function() return lua_fetch.fetch(url, { method = "GET" }) end)
+    if not ok then
+        return false, "Ollama request failed: " .. tostring(resp)
+    end
+    if resp.status ~= 200 then
+        return false, "Ollama returned code: " .. tostring(resp.status) .. "\n" .. tostring(resp.body)
+    end
+    return true
 end
 
 local function parse_model_response(response_text)
@@ -75,17 +105,29 @@ local function describe_image(image_path, opts)
         images = { image_data }
     })
 
-    local resp = lua_fetch.fetch("http://localhost:11434/api/generate", {
-        method = "POST",
-        body = body,
-        headers = {
-            ["Content-Type"] = "application/json",
-            ["Content-Length"] = tostring(#body)
-        }
-    })
+    local resp
+    for attempt = 1, MAX_RETRIES do
+        resp = lua_fetch.fetch("http://localhost:11434/api/generate", {
+            method = "POST",
+            body = body,
+            headers = {
+                ["Content-Type"] = "application/json",
+                ["Content-Length"] = tostring(#body)
+            }
+        })
 
-    rio:log_info("Ollama response code: " .. tostring(resp.status))
-    rio:log_info("Ollama response body: " .. tostring(resp.body))
+        rio:log_info("Ollama response code: " .. tostring(resp.status))
+        rio:log_info("Ollama response body: " .. tostring(resp.body))
+
+        if resp.status == 200 then
+            break
+        elseif attempt < MAX_RETRIES then
+            rio:log_warn("Ollama request failed (attempt " .. attempt .. "/" .. MAX_RETRIES .. "), code: "
+                .. tostring(resp.status) .. " " .. tostring(resp.body) .. " -- retrying in "
+                .. RETRY_DELAY_SECONDS .. "s")
+            rio_utils.sleep_seconds(RETRY_DELAY_SECONDS)
+        end
+    end
 
     if resp.status ~= 200 then
         return nil, "HTTP request failed with code: " .. tostring(resp.status) .. "\n" .. resp.body
@@ -109,6 +151,11 @@ end
 
 
 local function describe_frames(frames, opts)
+    local up, up_err = is_server_available(opts)
+    if not up then
+        return {}, "Ollama server unavailable: " .. tostring(up_err)
+    end
+
     local results = {}
     for i, frame in ipairs(frames) do
         local frame_path = type(frame) == "table" and frame.path or frame
@@ -132,4 +179,5 @@ return {
     describe_image = describe_image,
     describe_frames = describe_frames,
     make_options_object = make_options_object,
+    is_server_available = is_server_available,
 }
