@@ -17,7 +17,7 @@ local FFMPEG = "ffmpeg"
 
 --- Extract AWS options from a settings object
 --- @param config table  settings object with AWS options
---- @return table  AWS options table with keys: s3_bucket, confidence, do_labels, do_celebrities, do_faces, do_text, do_moderation, do_bedrock_summary, bedrock_model_id, bedrock_region
+--- @return table  AWS options table with keys: s3_bucket, confidence, do_labels, do_celebrities, do_faces, do_text, do_moderation, do_transcription, do_bedrock_summary, bedrock_model_id, bedrock_region
 local function make_options_object(config)
     return {
         s3_bucket = config.s3_bucket,
@@ -27,6 +27,7 @@ local function make_options_object(config)
         do_faces = rio_utils.to_boolean(config.do_aws_faces),
         do_text = rio_utils.to_boolean(config.do_aws_text),
         do_moderation = rio_utils.to_boolean(config.do_aws_moderation),
+        do_transcription = rio_utils.to_boolean(config.do_transcription),
         profile = config.aws_profile,
         language = config.language,
         max_timeout_seconds = config.max_timeout_seconds,
