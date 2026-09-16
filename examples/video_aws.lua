@@ -127,6 +127,7 @@ function plugin.execute()
     -- transcribe audio from the proxy
     local transcription_result
     if (aws_options.do_transcription) then
+        rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("active"), nil)
         local mp3_path = rio_utils.create_mp3_filename(input, working_directory)
         local transcription_err
         transcription_result, transcription_err = aws.transcribe_audio(proxy_path, mp3_path, aws_options.s3_bucket, aws_options)
@@ -169,16 +170,17 @@ function plugin.execute()
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("failure"), "Failed to aggregate frame results")
         return
     else
-        if settings.do_bedrock_summary then
+        if aws_options.do_bedrock_summary then
             local summary, summary_err = aws.summarize_clip(
                 transcription_result and transcription_result.text,
                 sample_frame_metadata,
                 aws_options
             )
             if summary then
-                sample_frame_metadata.ai_description = summary
+                rio:log_info("Generated Bedrock clip summary: ")
+                rio:save_summary(summary)
             else
-                rio:log_warn("Failed to generate Bedrock clip summary: " .. tostring(summary_err))
+                rio:log_info("Failed to generate Bedrock clip summary: " .. tostring(summary_err))
             end
         end
 

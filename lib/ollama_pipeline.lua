@@ -35,6 +35,8 @@ local function make_options_object(config)
         url = config.ollama_url,
         model = config.ollama_model,
         max_tags_per_frame = tonumber(config.max_tags_per_frame) or DEFAULT_MAX_TAGS_PER_FRAME,
+        do_summary = rio_utils.to_boolean(config.do_ollama_summary),
+        summary_model = config.ollama_summary_model,
     }
 end
 
@@ -84,30 +86,17 @@ local function process_response(response_json)
     return ret
 end
 
-local function describe_image(image_path, opts)
-    local image_file, open_err = io.open(image_path, "rb")
-    if not image_file then
-        return nil, "Failed to open image: " .. tostring(open_err)
-    end
-
-    local image_bytes = image_file:read("*a")
-    image_file:close()
-
-    if not image_bytes then
-        return nil, "Failed to read image bytes"
-    end
-
-    local image_data = b64.encode(image_bytes)
-    local body = json.encode({
-        model = opts.model,
-        prompt = PROMPT,
-        stream = false,
-        images = { image_data }
-    })
-
+--- POST a request body to an Ollama /api/generate-shaped endpoint, retrying a
+--- few times since a local Ollama server can transiently 500 under concurrent
+--- load from multiple LuaWorkers hitting the same model runner.
+---@param url string  full endpoint URL
+---@param body string  JSON-encoded request body
+---@return string|nil response_body  raw JSON response body, or nil on failure
+---@return string? err
+local function post_generate(url, body)
     local resp
     for attempt = 1, MAX_RETRIES do
-        resp = lua_fetch.fetch("http://localhost:11434/api/generate", {
+        resp = lua_fetch.fetch(url, {
             method = "POST",
             body = body,
             headers = {
@@ -132,10 +121,38 @@ local function describe_image(image_path, opts)
     if resp.status ~= 200 then
         return nil, "HTTP request failed with code: " .. tostring(resp.status) .. "\n" .. resp.body
     end
+    return resp.body
+end
 
-    local response_json, _, decode_err = json.decode(resp.body)
+local function describe_image(image_path, opts)
+    local image_file, open_err = io.open(image_path, "rb")
+    if not image_file then
+        return nil, "Failed to open image: " .. tostring(open_err)
+    end
+
+    local image_bytes = image_file:read("*a")
+    image_file:close()
+
+    if not image_bytes then
+        return nil, "Failed to read image bytes"
+    end
+
+    local image_data = b64.encode(image_bytes)
+    local body = json.encode({
+        model = opts.model,
+        prompt = PROMPT,
+        stream = false,
+        images = { image_data }
+    })
+
+    local response_body, post_err = post_generate("http://localhost:11434/api/generate", body)
+    if not response_body then
+        return nil, post_err
+    end
+
+    local response_json, _, decode_err = json.decode(response_body)
     if not response_json then
-        return nil, "Failed to decode response: " .. tostring(decode_err) .. "\n" .. resp.body
+        return nil, "Failed to decode response: " .. tostring(decode_err) .. "\n" .. response_body
     end
 
     if response_json.response then
@@ -175,9 +192,72 @@ local function describe_frames(frames, opts)
     return results
 end
 
+local SUMMARY_PROMPT_TEMPLATE = [[
+You are writing a brief, factual summary of a video clip for a media asset management system.
+Use the transcript, detected visual tags, and recognized people below to write a single concise
+paragraph (2-4 sentences) describing the clip's content. Write it as a natural, free-standing
+description -- do not mention that you were given a transcript, tags, or labels, and do not
+use markdown.
+
+Transcript:
+%s
+
+Detected visual tags: %s
+
+Recognized people: %s
+]]
+
+--- Summarize a whole clip by sending its transcript plus aggregated frame tags
+--- to a local Ollama text model via /api/generate, asking for a short prose
+--- description. Mirrors aws_pipeline.summarize_clip so callers can switch
+--- between the AWS Bedrock and local Ollama backends interchangeably.
+---@param transcript_text string|nil  full transcript text from a transcription step, if any
+---@param frame_metadata table  aggregated frame metadata from ffmpeg_pipeline.aggregate_frame_results (reads ai_tagN / ai_celebrityN)
+---@param opts? { url?: string, model?: string, summary_model?: string }
+---@return string|nil summary  a short prose description of the clip, or nil on failure
+---@return string? err
+local function summarize_clip(transcript_text, frame_metadata, opts)
+    opts = opts or {}
+
+    local tags = rio_utils.extract_indexed_values(frame_metadata or {}, "ai_tag")
+    local celebrities = rio_utils.extract_indexed_values(frame_metadata or {}, "ai_celebrity")
+    local transcript_excerpt = rio_utils.trim(transcript_text or "")
+
+    local prompt = string.format(
+        SUMMARY_PROMPT_TEMPLATE,
+        transcript_excerpt ~= "" and transcript_excerpt or "(no speech detected)",
+        #tags > 0 and table.concat(tags, ", ") or "(none detected)",
+        #celebrities > 0 and table.concat(celebrities, ", ") or "(none detected)"
+    )
+
+    local url = (opts.url or "http://localhost:11434") .. "/api/generate"
+    local body = json.encode({
+        model = opts.summary_model or opts.model,
+        prompt = prompt,
+        stream = false,
+    })
+
+    local response_body, post_err = post_generate(url, body)
+    if not response_body then
+        return nil, post_err
+    end
+
+    local response_json, _, decode_err = json.decode(response_body)
+    if not response_json then
+        return nil, "Failed to decode response: " .. tostring(decode_err) .. "\n" .. response_body
+    end
+
+    if not response_json.response then
+        return nil, "ollama generate response missing 'response' text: " .. tostring(response_body)
+    end
+
+    return rio_utils.trim(response_json.response)
+end
+
 return {
     describe_image = describe_image,
     describe_frames = describe_frames,
+    summarize_clip = summarize_clip,
     make_options_object = make_options_object,
     is_server_available = is_server_available,
 }

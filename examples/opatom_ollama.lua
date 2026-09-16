@@ -15,6 +15,8 @@ function plugin.schema()
       { key = "max_tags_per_frame",         type = "integer", default = 20,       min = 1, max = 50,   label = "Max Tags" },
       { key = "ollama_url",                 type = "string",  default = "http://localhost:11434",      label = "Ollama URL" },
       { key = "ollama_model",               type = "string",  default = "llava",                       label = "Ollama Model" },
+      { key = "do_ollama_summary",          type = "boolean", default = false,                         label = "Generate AI Clip Summary (Ollama)" },
+      { key = "ollama_summary_model",       type = "string",  default = "llava",                       label = "Ollama Summary Model" },
       -- Proxy / thumbnail
       { key = "proxy_format",   type = "enum",    default = "mp4",     choices ={"mp4", "webm"},       label = "Proxy Format" },
       { key = "proxy_codec",    type = "enum",    default = "libx264", choices ={"libx264", "h264_nvenc", "h264_videotoolbox", "libvpx-vp9"}, label = "Video Codec" },
@@ -122,11 +124,13 @@ function plugin.execute()
     rio:log_debug("All metadata: " .. json.encode(all_technical_metadata, { indent = true }))
     rio:save_technical_metadata(all_technical_metadata)
 
+    local transcription_result
     if (whisper_opts.do_transcription) then
         -- transcribe audio from the video proxy
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("active"), nil)
         local wav_path = rio_utils.create_wav_filename(input, working_directory)
-        local transcription_result, transcription_err = whisper.transcribe_audio(proxy_path, wav_path, whisper_opts)
+        local transcription_err
+        transcription_result, transcription_err = whisper.transcribe_audio(proxy_path, wav_path, whisper_opts)
         if not transcription_result then
             rio:log_error("Failed to transcribe audio:" .. tostring(transcription_err))
             rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("failure"), tostring(transcription_err))
@@ -166,6 +170,20 @@ function plugin.execute()
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("failure"), "Failed to aggregate frame results")
         return
     else
+        if ollama_opts.do_summary then
+            local summary, summary_err = ollama.summarize_clip(
+                transcription_result and transcription_result.text,
+                sample_frame_metadata,
+                ollama_opts
+            )
+            if summary then
+                rio:save_summary(summary)
+                rio:log_info("Generated Ollama clip summary")
+            else
+                rio:log_warn("Failed to generate Ollama clip summary: " .. tostring(summary_err))
+            end
+        end
+
         rio:save_ai_metadata(sample_frame_metadata)
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("completed"), nil)
         rio:log_debug(json.encode(sample_frame_metadata, { indent = true }))

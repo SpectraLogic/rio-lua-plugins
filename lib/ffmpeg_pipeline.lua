@@ -276,14 +276,7 @@ local function resolve_essence_paths(paths)
         local path = array[i]
         local meta, err = get_video_metadata(path)
         if not meta then
-            if rio_utils.is_directory(path) then
-                -- server may now hand back a package/bundle directory instead of flat essence
-                -- paths -- list it so the real contents show up in the log for diagnosis
-                local entries = rio_utils.list_directory(path)
-                rio:log_warn("resolve_essence_paths: '" .. tostring(path) .. "' is a directory, not a file -- contents: " .. table.concat(entries, ", "))
-            else
-                rio:log_warn("resolve_essence_paths: skipping unprobeable input '" .. tostring(path) .. "': " .. tostring(err))
-            end
+            rio:log_warn("resolve_essence_paths: skipping unprobeable input '" .. tostring(path) .. "': " .. tostring(err))
             goto continue
         end
 
