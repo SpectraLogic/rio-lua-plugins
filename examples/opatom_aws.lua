@@ -170,7 +170,7 @@ function plugin.execute()
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("failure"), "Failed to aggregate frame results")
         return
     else
-        if settings.do_bedrock_summary then
+        if aws_options.do_bedrock_summary then
             local summary, summary_err = aws.summarize_clip(
                 transcription_result and transcription_result.text,
                 sample_frame_metadata,

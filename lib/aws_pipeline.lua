@@ -376,20 +376,6 @@ Detected visual tags: %s
 Recognized people: %s
 ]]
 
---- Pull "prefix1", "prefix2", ... values out of a flat metadata table into an ordered array.
----@param metadata table
----@param prefix string
----@return string[]
-local function extract_indexed_values(metadata, prefix)
-    local values = {}
-    local index = 1
-    while metadata[prefix .. index] do
-        values[#values + 1] = metadata[prefix .. index]
-        index = index + 1
-    end
-    return values
-end
-
 --- Summarize a whole clip by sending its transcript plus aggregated Rekognition
 --- tags/celebrities to an AWS Bedrock text model and asking for a short prose
 --- description. Uses the Bedrock Converse API rather than raw invoke-model,
@@ -404,8 +390,8 @@ end
 local function summarize_clip(transcript_text, frame_metadata, opts)
     opts = opts or {}
 
-    local tags = extract_indexed_values(frame_metadata or {}, "ai_tag")
-    local celebrities = extract_indexed_values(frame_metadata or {}, "ai_celebrity")
+    local tags = rio_utils.extract_indexed_values(frame_metadata or {}, "ai_tag")
+    local celebrities = rio_utils.extract_indexed_values(frame_metadata or {}, "ai_celebrity")
     local transcript_excerpt = rio_utils.trim(transcript_text or "")
 
     local prompt = string.format(

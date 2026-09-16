@@ -474,6 +474,22 @@ local function get_status_name(name)
     return status_names[name:lower()] or "UNKNOWN"
 end
 
+--- Pull "prefix1", "prefix2", ... values out of a flat metadata table into an ordered array.
+--- Shared by aws_pipeline and ollama_pipeline to read back ai_tagN / ai_celebrityN entries
+--- written by ffmpeg_pipeline.aggregate_frame_results.
+---@param metadata table
+---@param prefix string
+---@return string[]
+local function extract_indexed_values(metadata, prefix)
+    local values = {}
+    local index = 1
+    while metadata[prefix .. index] do
+        values[#values + 1] = metadata[prefix .. index]
+        index = index + 1
+    end
+    return values
+end
+
 
 ---@class RioUtils
 ---@field split_file_name fun(path: string): string, string|nil # Split a path into filename stem and extension.
@@ -506,6 +522,7 @@ end
 ---@field format_timestamp_for_filename fun(total_seconds: number): string # Seconds -> filename-safe `HH-MM-SS_mmm`.
 ---@field get_product_name fun(name: string): string # Normalize product name to enum.
 ---@field get_status_name fun(name: string): string # Normalize status name to enum.
+---@field extract_indexed_values fun(metadata: table, prefix: string): string[] # Pull "prefix1", "prefix2", ... values out of a flat metadata table into an ordered array.
 
 return {
     split_file_name = split_file_name,
@@ -538,4 +555,5 @@ return {
     format_timestamp_for_filename = format_timestamp_for_filename,
     get_product_name = get_product_name,
     get_status_name = get_status_name,
+    extract_indexed_values = extract_indexed_values,
 }
