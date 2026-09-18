@@ -13,8 +13,10 @@ local json = require("dkjson")
 ---@type RioUtils
 local rio_utils = require("rio_utils")
 
+local IS_WINDOWS = os.getenv("OS") == "Windows_NT"
 local MAGICK = "magick"
-local GS = "gs"
+local GS = IS_WINDOWS and "gswin64c" or "gs"
+
 
 local function make_options_object(opts)
     opts = opts or {}
