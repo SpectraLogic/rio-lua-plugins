@@ -30,7 +30,7 @@ local function make_options_object(opts)
     }
 end
 
-
+-- 8AWYlGCB3H3HqJvz3Xjfck9CTghMaW5rVHlwZUZpbGU9XFxsb2NhbGhvc3RcYyRcU3RvckN5Y2xlXHNoYXJlc1xvbmVcQWxsSW5UaGVHYW1lLmpwZw
 --- Probe an image with `magick identify` for technical metadata.
 ---@param image_path string  path to the image file
 ---@return table|nil metadata  { format, width, height, resolution_dpi, file_size_bytes }, or nil on failure
@@ -70,20 +70,26 @@ end
 ---@return table|nil metadata  the derivative's image metadata, or nil on failure
 ---@return string? err
 local function write_derivative(input_path, output_path, resize_geometry, density_dpi)
-    local parts = {}
-    for _, part in ipairs({
+    -- Shrink-only: ">" stops small sources being upscaled. Skipped if the caller
+    -- already supplied a geometry flag (> < ^ ! % @).
+    local geometry = tostring(resize_geometry)
+    if not geometry:match("[<>^!%%@]$") then
+        geometry = geometry .. ">"
+    end
+
+    -- Append the optional density arg, not a `cond and x or nil` entry --
+    -- ipairs would stop at the nil and silently drop output_path after it.
+    local parts = {
         MAGICK,
         rio_utils.shell_quote(input_path),
         "-auto-orient",
         "-strip",
-        "-resize " .. rio_utils.shell_quote(resize_geometry),
-        density_dpi and ("-units PixelsPerInch -density " .. tostring(density_dpi)) or nil,
-        rio_utils.shell_quote(output_path),
-    }) do
-        if part then
-            parts[#parts + 1] = part
-        end
+        "-resize " .. rio_utils.shell_quote(geometry),
+    }
+    if density_dpi then
+        parts[#parts + 1] = "-units PixelsPerInch -density " .. tostring(density_dpi)
     end
+    parts[#parts + 1] = rio_utils.shell_quote(output_path)
 
     if not rio_utils.run_quiet_command(rio_utils.join_command(parts)) then
         return nil, "ImageMagick command failed"

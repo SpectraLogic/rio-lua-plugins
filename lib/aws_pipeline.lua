@@ -376,30 +376,52 @@ Detected visual tags: %s
 Recognized people: %s
 ]]
 
+-- Audio-only variant: no visual sections, so the model isn't told "no visual
+-- tags" and tempted to comment on (or invent) missing visuals.
+local AUDIO_SUMMARY_PROMPT_TEMPLATE = [[
+You are writing a brief, factual summary of an audio recording for a media asset management system.
+Use the transcript below to write a single concise paragraph (2-4 sentences) describing the
+recording's content. Write it as a natural, free-standing description -- do not mention that you
+were given a transcript, and do not use markdown.
+
+Transcript:
+%s
+]]
+
 --- Summarize a whole clip by sending its transcript plus aggregated Rekognition
 --- tags/celebrities to an AWS Bedrock text model and asking for a short prose
 --- description. Uses the Bedrock Converse API rather than raw invoke-model,
 --- since Converse normalizes the request/response message format across model
 --- providers (Anthropic, Amazon Nova, Meta, ...) -- invoke-model requires
 --- speaking each provider's own native body schema.
+--- Pass frame_metadata = nil for audio-only media: the prompt then describes an
+--- audio recording from the transcript alone.
 ---@param transcript_text string|nil  full transcript text from transcribe_audio, if any
----@param frame_metadata table  aggregated frame metadata from ffmpeg_pipeline.aggregate_frame_results (reads ai_tagN / ai_celebrityN)
+---@param frame_metadata table|nil  aggregated frame metadata from ffmpeg_pipeline.aggregate_frame_results (reads ai_tagN / ai_celebrityN), or nil for audio-only
 ---@param opts? { bedrock_model_id?: string, bedrock_region?: string, profile?: string }
 ---@return string|nil summary  a short prose description of the clip, or nil on failure
 ---@return string? err
 local function summarize_clip(transcript_text, frame_metadata, opts)
     opts = opts or {}
 
-    local tags = rio_utils.extract_indexed_values(frame_metadata or {}, "ai_tag")
-    local celebrities = rio_utils.extract_indexed_values(frame_metadata or {}, "ai_celebrity")
     local transcript_excerpt = rio_utils.trim(transcript_text or "")
 
-    local prompt = string.format(
-        SUMMARY_PROMPT_TEMPLATE,
-        transcript_excerpt ~= "" and transcript_excerpt or "(no speech detected)",
-        #tags > 0 and table.concat(tags, ", ") or "(none detected)",
-        #celebrities > 0 and table.concat(celebrities, ", ") or "(none detected)"
-    )
+    local prompt
+    if frame_metadata == nil then
+        if transcript_excerpt == "" then
+            return nil, "nothing to summarize: audio-only clip with no transcript"
+        end
+        prompt = string.format(AUDIO_SUMMARY_PROMPT_TEMPLATE, transcript_excerpt)
+    else
+        local tags = rio_utils.extract_indexed_values(frame_metadata, "ai_tag")
+        local celebrities = rio_utils.extract_indexed_values(frame_metadata, "ai_celebrity")
+        prompt = string.format(
+            SUMMARY_PROMPT_TEMPLATE,
+            transcript_excerpt ~= "" and transcript_excerpt or "(no speech detected)",
+            #tags > 0 and table.concat(tags, ", ") or "(none detected)",
+            #celebrities > 0 and table.concat(celebrities, ", ") or "(none detected)"
+        )
+    end
 
     local model_id = opts.bedrock_model_id or "us.amazon.nova-2-lite-v1:0"
     local messages = json.encode({
@@ -407,14 +429,22 @@ local function summarize_clip(transcript_text, frame_metadata, opts)
     })
     local inference_config = json.encode({ maxTokens = 300 })
 
-    local cmd = rio_utils.join_command({
+    -- Append optional args after the fact, not as `cond and x or nil` entries --
+    -- join_command walks with ipairs, so an unset region would silently drop
+    -- every arg after it (here: --profile).
+    local parts = {
         "aws bedrock-runtime converse",
         "--model-id " .. rio_utils.shell_quote(model_id),
         "--messages " .. rio_utils.shell_quote(messages),
         "--inference-config " .. rio_utils.shell_quote(inference_config),
-        opts.bedrock_region and ("--region " .. rio_utils.shell_quote(opts.bedrock_region)) or nil,
-        opts.profile and ("--profile " .. rio_utils.shell_quote(opts.profile)) or nil,
-    })
+    }
+    if opts.bedrock_region then
+        parts[#parts + 1] = "--region " .. rio_utils.shell_quote(opts.bedrock_region)
+    end
+    if opts.profile then
+        parts[#parts + 1] = "--profile " .. rio_utils.shell_quote(opts.profile)
+    end
+    local cmd = rio_utils.join_command(parts)
     -- Same caveat as elsewhere in this file: the close-status can report
     -- success even when the aws CLI actually failed, so also check its
     -- output for the CLI's own "An error occurred (...)" failure marker.
@@ -445,7 +475,7 @@ end
 ---@field describe_image fun(image_path: string, s3_bucket: string, opts?: table): table|nil, string? # Analyze an image with Rekognition; returns aggregated metadata.
 ---@field describe_frames fun(frames: table[], s3_bucket: string, opts?: table): table[], string? # Analyze a list of frame records.
 ---@field transcribe_audio fun(audio_path: string, s3_bucket: string, opts?: table): table|nil, string? # Upload audio, run AWS Transcribe, return { text, word_count, char_count, job_name }.
----@field summarize_clip fun(transcript_text: string|nil, frame_metadata: table, opts?: table): string|nil, string? # Ask Bedrock for a short prose summary of the whole clip.
+---@field summarize_clip fun(transcript_text: string|nil, frame_metadata: table|nil, opts?: table): string|nil, string? # Ask Bedrock for a short prose summary of the whole clip (frame_metadata nil = audio-only).
 
 return {
     describe_image = describe_image,
