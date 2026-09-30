@@ -207,28 +207,50 @@ Detected visual tags: %s
 Recognized people: %s
 ]]
 
+-- Audio-only variant: no visual sections, so the model isn't told "no visual
+-- tags" and tempted to comment on (or invent) missing visuals.
+local AUDIO_SUMMARY_PROMPT_TEMPLATE = [[
+You are writing a brief, factual summary of an audio recording for a media asset management system.
+Use the transcript below to write a single concise paragraph (2-4 sentences) describing the
+recording's content. Write it as a natural, free-standing description -- do not mention that you
+were given a transcript, and do not use markdown.
+
+Transcript:
+%s
+]]
+
 --- Summarize a whole clip by sending its transcript plus aggregated frame tags
 --- to a local Ollama text model via /api/generate, asking for a short prose
 --- description. Mirrors aws_pipeline.summarize_clip so callers can switch
 --- between the AWS Bedrock and local Ollama backends interchangeably.
+--- Pass frame_metadata = nil for audio-only media: the prompt then describes an
+--- audio recording from the transcript alone.
 ---@param transcript_text string|nil  full transcript text from a transcription step, if any
----@param frame_metadata table  aggregated frame metadata from ffmpeg_pipeline.aggregate_frame_results (reads ai_tagN / ai_celebrityN)
+---@param frame_metadata table|nil  aggregated frame metadata from ffmpeg_pipeline.aggregate_frame_results (reads ai_tagN / ai_celebrityN), or nil for audio-only
 ---@param opts? { url?: string, model?: string, summary_model?: string }
 ---@return string|nil summary  a short prose description of the clip, or nil on failure
 ---@return string? err
 local function summarize_clip(transcript_text, frame_metadata, opts)
     opts = opts or {}
 
-    local tags = rio_utils.extract_indexed_values(frame_metadata or {}, "ai_tag")
-    local celebrities = rio_utils.extract_indexed_values(frame_metadata or {}, "ai_celebrity")
     local transcript_excerpt = rio_utils.trim(transcript_text or "")
 
-    local prompt = string.format(
-        SUMMARY_PROMPT_TEMPLATE,
-        transcript_excerpt ~= "" and transcript_excerpt or "(no speech detected)",
-        #tags > 0 and table.concat(tags, ", ") or "(none detected)",
-        #celebrities > 0 and table.concat(celebrities, ", ") or "(none detected)"
-    )
+    local prompt
+    if frame_metadata == nil then
+        if transcript_excerpt == "" then
+            return nil, "nothing to summarize: audio-only clip with no transcript"
+        end
+        prompt = string.format(AUDIO_SUMMARY_PROMPT_TEMPLATE, transcript_excerpt)
+    else
+        local tags = rio_utils.extract_indexed_values(frame_metadata, "ai_tag")
+        local celebrities = rio_utils.extract_indexed_values(frame_metadata, "ai_celebrity")
+        prompt = string.format(
+            SUMMARY_PROMPT_TEMPLATE,
+            transcript_excerpt ~= "" and transcript_excerpt or "(no speech detected)",
+            #tags > 0 and table.concat(tags, ", ") or "(none detected)",
+            #celebrities > 0 and table.concat(celebrities, ", ") or "(none detected)"
+        )
+    end
 
     local url = (opts.url or "http://localhost:11434") .. "/api/generate"
     local body = json.encode({

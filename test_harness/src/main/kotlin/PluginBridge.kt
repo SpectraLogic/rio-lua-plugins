@@ -97,6 +97,10 @@ class PluginBridge(
         logger.info("[mock register_sidecar] $fileName -> $sidecarName")
     }
 
+    fun save_summary(summary: String) {
+        logger.info("[mock save_summary] $fileName: $summary")
+    }
+
     fun product_status(
         product: String,
         status: String,

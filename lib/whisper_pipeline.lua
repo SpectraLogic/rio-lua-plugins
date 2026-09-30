@@ -85,12 +85,13 @@ local function transcribe_audio(input_path, wav_path, opts)
     if opts.threads then parts[#parts + 1] = "-t " .. tostring(opts.threads) end
 
     if not rio_utils.run_quiet_command(rio_utils.join_command(parts)) then
-        return nil, "whisper-cli failed"
+        return nil, "whisper-cli failed" .. " (" .. rio_utils.join_command(parts) .. ")"
     end
 
     -- 3. read the clean transcript back.
     local f = io.open(txt_path, "r")
     if not f then
+        rio:log_info("Ran whisper-cli command: " .. rio_utils.join_command(parts))
         return nil, "transcript file not produced: " .. txt_path
     end
     local text = rio_utils.trim(f:read("*a") or "")
