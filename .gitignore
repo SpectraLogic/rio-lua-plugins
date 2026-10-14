@@ -4,8 +4,13 @@
 # copy into examples/ or lib/ to check in
 work/
 .claude/
+.vscode/
 
 test_harness/build/
 test_harness/.gradle/
 test_harness/.kotlin/
-test_harness/settings-overrides.json
+test_harness/.idea/
+test_harness/lua-output
+test_harness/source-input/
+*.iml
+

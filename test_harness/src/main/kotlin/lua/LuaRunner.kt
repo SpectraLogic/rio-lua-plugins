@@ -14,8 +14,9 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.system.exitProcess
 
-private val scriptDir: Path = Paths.get(System.getProperty("user.dir"))
-private val workDir: Path = Paths.get(System.getProperty("user.dir"))
+// Everything relative (script, input, output, settings, clips) resolves against
+// the directory the harness is launched from, not where the jar lives.
+private val workDir: Path = Paths.get(System.getProperty("user.dir")).toAbsolutePath()
 
 fun main(args: Array<String>) {
     val logger = LoggerFactory.getLogger("LuaRunner")
@@ -25,7 +26,7 @@ fun main(args: Array<String>) {
             args.isNotEmpty() -> resolveScript(args[0])
             else -> {
                 logger.error("Usage: ./gradlew runLua -PluaScript=<name-or-path>")
-                logger.error("Scripts are resolved relative to $scriptDir unless given as an absolute path.")
+                logger.error("Scripts are resolved relative to $workDir unless given as an absolute path.")
                 exitProcess(1)
             }
         }
@@ -35,8 +36,8 @@ fun main(args: Array<String>) {
         exitProcess(1)
     }
 
-    val inputPath = workDir.resolve("source-input").resolve(System.getProperty("luaInput") ?: "test.jpg").toString()
-    val outputPath = System.getProperty("luaOutput") ?: workDir.resolve("proxy-output").toString()
+    val inputPath = resolveInput(System.getProperty("luaInput") ?: "test.jpg").toString()
+    val outputPath = workDir.resolve(System.getProperty("luaOutput") ?: "proxy-output").normalize().toString()
     val clipPath = workDir.resolve(System.getProperty("luaClip") ?: "clip-input")
     Files.createDirectories(Paths.get(outputPath))
     val inputFileName = Paths.get(inputPath).fileName.toString()
@@ -48,9 +49,15 @@ fun main(args: Array<String>) {
     globals.set("working_directory", outputPath.toString() + "/")
     globals.load(IO_POPEN_PATCH).call()
     registerModules(globals)
+    // Search the script's own directory and the working directory (plus their lib/
+    // and ../lib/ siblings). The bare "?.lua" entry also falls back to the lib/*.lua
+    // modules bundled into the jar, so require() works from any directory.
+    val scriptDir = scriptPath.toAbsolutePath().parent
     globals.get("package").set(
         "path",
-        "$scriptDir/?.lua;$scriptDir/lib/?.lua;$scriptDir/../lib/?.lua;?.lua;$scriptDir/?/init.lua",
+        listOf(scriptDir, workDir).distinct().flatMap { dir ->
+            listOf("$dir/?.lua", "$dir/lib/?.lua", "$dir/../lib/?.lua", "$dir/?/init.lua")
+        }.plus("?.lua").joinToString(";"),
     )
 
     logger.info("Running ${scriptPath.fileName} (input_path=$inputPath, output_path=$outputPath)")
@@ -107,7 +114,7 @@ private fun buildConfig(globals: Globals, schema: LuaValue, logger: Logger): Lua
 
     val overridesPath = System.getProperty("luaSettings")
     if (overridesPath != null) {
-        val overridesJson = Files.readString(Paths.get(overridesPath))
+        val overridesJson = Files.readString(workDir.resolve(overridesPath))
         val overrides = dkjson.get("decode").call(LuaValue.valueOf(overridesJson))
         if (overrides.istable()) {
             for (key in overrides.checktable().keys()) {
@@ -125,8 +132,16 @@ private fun buildConfig(globals: Globals, schema: LuaValue, logger: Logger): Lua
 private fun resolveScript(arg: String): Path {
     val direct = Paths.get(arg)
     if (direct.isAbsolute) return direct
-    val inDir = scriptDir.resolve(arg)
-    return if (Files.exists(inDir) || arg.endsWith(".lua")) inDir else scriptDir.resolve("$arg.lua")
+    val inDir = workDir.resolve(arg)
+    return if (Files.exists(inDir) || arg.endsWith(".lua")) inDir else workDir.resolve("$arg.lua")
+}
+
+// Input may be absolute, relative to the working directory, or (legacy) a bare
+// name under ./source-input.
+private fun resolveInput(arg: String): Path {
+    val direct = workDir.resolve(arg)
+    if (Files.exists(direct)) return direct.normalize()
+    return workDir.resolve("source-input").resolve(arg).normalize()
 }
 
 // LuaJ's built-in io.popen is a non-functional stub: it doesn't fork a subprocess
