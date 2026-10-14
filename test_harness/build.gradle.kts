@@ -46,3 +46,25 @@ tasks.register<JavaExec>("runLua") {
     environment("PATH", "/opt/homebrew/bin:" + System.getenv("PATH"))
     standardInput = System.`in`
 }
+
+// Self-contained bundle: fat jar + launchers side by side. Unzip anywhere, put the
+// folder (or a symlink to runme.sh) on PATH, and run from any working directory.
+tasks.register<Zip>("dist") {
+    group = "distribution"
+    description = "Package the fat jar, runme launchers and run_script test runners into build/dist"
+    val shadowJar = tasks.named<Jar>("shadowJar")
+    dependsOn(shadowJar)
+    archiveFileName.set("plugin_test_harness.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("dist"))
+    into("plugin_test_harness") {
+        from(shadowJar.flatMap { it.archiveFile })
+        from("runme.sh") { filePermissions { unix("rwxr-xr-x") } }
+        from("runme.bat")
+        from("run_script.sh") { filePermissions { unix("rwxr-xr-x") } }
+        from("run_script.bat")
+        from("settings-overrides.json") { rename { "settings.json" } }
+        into("scripts") {
+            from("../examples") { include("*.lua") }
+        }
+    }
+}

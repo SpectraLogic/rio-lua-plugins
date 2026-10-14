@@ -43,8 +43,9 @@ local function extract_audio_wav(input_path, wav_path)
         "-c:a pcm_s16le",   -- 16-bit PCM WAV
         rio_utils.shell_quote(wav_path),
     })
+    rio:log_info("Extract audio WAV command: " .. cmd)
     if not rio_utils.run_quiet_command(cmd) then
-        return false, "ffmpeg audio extraction failed"
+        return false, "ffmpeg audio extraction failed: " .. cmd
     end
     return true
 end
