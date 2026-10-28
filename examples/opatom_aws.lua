@@ -190,10 +190,9 @@ function plugin.execute()
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("completed"), nil)
     end
 
-    rio:save_status(rio_utils.get_status_name("completed"), nil)
-    rio:save_status(rio_utils.get_status_name("completed"), nil)
     rio:log_info("Registered: " .. tostring(proxy_path))
     rio:log_info("Registered: " .. tostring(thumbnail_path))
     rio:log_info("Registered: " .. tostring(sidecar_path))
+    rio:save_status(rio_utils.get_status_name("completed"), nil)
 
 end

@@ -92,4 +92,6 @@ function plugin.execute()
     rio:save_status(rio_utils.get_status_name("completed"), nil)
     rio:log_info("Registered: " .. tostring(thumbnail_path))
     rio:log_info("Registered: " .. tostring(preview_path))
+    rio:save_status(rio_utils.get_status_name("completed"), nil)
+
 end
