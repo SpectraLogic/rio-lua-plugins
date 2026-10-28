@@ -32,6 +32,8 @@ function plugin.execute()
     local ollama = require("ollama_pipeline")
     local json = require("dkjson")
 
+    -- check required configuration
+    if not rio_utils.require_settings(settings, { "ollama_url" }) then return end
     local magick_opts = magick_pipeline.make_options_object(settings)
     local ollama_opts = ollama.make_options_object(settings)
     local thumbnail_path = rio_utils.create_thumbnail_name(input, magick_opts.thumbnail_format, working_directory)

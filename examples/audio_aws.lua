@@ -38,6 +38,9 @@ function plugin.execute()
     ---@type AwsPipeline
     local aws = require("aws_pipeline")
 
+    -- check required configuration
+    if not rio_utils.require_settings(settings, { "s3_bucket", "proxy_quality" }) then return end
+
     local aws_options = aws.make_options_object(settings)
     local audio_opts = audio_pipeline.make_options_object(settings)
 

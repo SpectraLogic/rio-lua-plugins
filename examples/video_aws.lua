@@ -50,6 +50,8 @@ function plugin.execute()
     local ffmpeg_pipeline = require("ffmpeg_pipeline")
     local aws = require("aws_pipeline")
 
+    -- check required configuration
+    if not rio_utils.require_settings(settings, { "s3_bucket", "proxy_format" }) then return end
     local aws_options = aws.make_options_object(settings)
     local ffmpeg_opts = ffmpeg_pipeline.make_options_object(settings)
 

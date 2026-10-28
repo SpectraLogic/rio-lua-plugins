@@ -42,6 +42,9 @@ function plugin.execute()
     local ollama = require("ollama_pipeline")
     local whisper = require("whisper_pipeline")
 
+
+    -- check required configuration
+    if not rio_utils.require_settings(settings, { "ollama_url", "proxy_format" }) then return end
     local ollama_opts = ollama.make_options_object(settings)
     local ffmpeg_opts = ffmpeg_pipeline.make_options_object(settings)
     local whisper_opts = whisper.make_options_object(settings)
@@ -65,6 +68,7 @@ function plugin.execute()
     rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("initializing"), nil)
     if (whisper_opts.do_transcription) then
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("initializing"), nil)
+        if not rio_utils.require_settings(settings, { "model" }) then return end
     end
 
     local technical_metadata, tech_err = ffmpeg_pipeline.get_video_metadata(input)

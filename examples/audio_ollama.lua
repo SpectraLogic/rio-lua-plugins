@@ -41,6 +41,9 @@ function plugin.execute()
     ---@type WhisperPipeline
     local whisper = require("whisper_pipeline")
 
+    -- check required configuration
+    if not rio_utils.require_settings(settings, { "proxy_quality" }) then return end
+
     local ollama_opts = ollama.make_options_object(settings)
     local audio_opts = audio_pipeline.make_options_object(settings)
     local whisper_opts = whisper.make_options_object(settings)
@@ -63,9 +66,11 @@ function plugin.execute()
     rio:product_status(rio_utils.get_product_name("sidecar"), rio_utils.get_status_name("initializing"), nil)
     if (whisper_opts.do_transcription) then
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("initializing"), nil)
+        if not rio_utils.require_settings(settings, { "model" }) then return end
     end
     if (ollama_opts.do_summary) then
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("initializing"), nil)
+        if not rio_utils.require_settings(settings, { "ollama_url" }) then return end
     end
 
     local technical_metadata, tech_err = audio_pipeline.get_audio_metadata(input)

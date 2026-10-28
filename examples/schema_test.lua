@@ -31,8 +31,25 @@ function plugin.schema()
 end
 
 function plugin.execute()
+    local ffmpeg_pipeline = require("ffmpeg_pipeline")
+    local ollama = require("ollama_pipeline")
+    local whisper = require("whisper_pipeline")
+    local aws = require("aws_pipeline")
+
+    local ollama_opts = ollama.make_options_object(settings)
+    local ffmpeg_opts = ffmpeg_pipeline.make_options_object(settings)
+    local whisper_opts = whisper.make_options_object(settings)
+    local aws_opts = aws.make_options_object(settings)
+
+    if not rio_utils.require_settings(settings, { "proxy_format", "proxy_codec" }) then return end
+
     rio:log_info("Executing plugin on object: " .. tostring(input))
-    rio:log_info("Settings: " .. tostring(settings))
+    rio:log_info("Settings: " .. rio_utils.describe_value(settings))
+    rio:log_info("AWS options: " .. rio_utils.describe_value(aws_opts))
+    rio:log_info("Ollama options: " .. rio_utils.describe_value(ollama_opts))
+    rio:log_info("Whisper options: " .. rio_utils.describe_value(whisper_opts))
+    rio:log_info("FFmpeg options: " .. rio_utils.describe_value(ffmpeg_opts))
+
     rio:log_info("Proxy format: " .. tostring(settings.proxy_format) .. " Proxy codec: " .. tostring(settings.proxy_codec))
     local proxy_path = rio_utils.create_proxy_name(input, settings.proxy_format, working_directory)
     rio:log_info("Processing video: " .. tostring(input) .. " output: " .. tostring(proxy_path))
