@@ -49,13 +49,15 @@ function plugin.execute()
     rio:product_status(rio_utils.get_product_name("sidecar"), rio_utils.get_status_name("initializing"), nil)
     rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("initializing"), nil)
 
-    rio:log_info(rio_utils.describe_value(settings, "settings"))
+    -- check required configuration
+    if not rio_utils.require_settings(settings, { "ollama_url", "proxy_format" }) then return end
     local ollama_opts = ollama.make_options_object(settings)
     local ffmpeg_opts = ffmpeg_pipeline.make_options_object(settings)
     local whisper_opts = whisper.make_options_object(settings)
 
     if (whisper_opts.do_transcription) then
         rio:product_status(rio_utils.get_product_name("transcription"), rio_utils.get_status_name("initializing"), nil)
+        if not rio_utils.require_settings(settings, { "model" }) then return end
     end
 
     local proxy_path = rio_utils.create_proxy_name(input, settings.proxy_format, working_directory)

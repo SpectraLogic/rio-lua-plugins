@@ -46,6 +46,8 @@ function plugin.execute()
     local ffmpeg_pipeline = require("ffmpeg_pipeline")
     local aws = require("aws_pipeline")
 
+    -- check required configuration
+    if not rio_utils.require_settings(settings, { "s3_bucket", "proxy_format" }) then return end
     local aws_options = aws.make_options_object(settings)
     local ffmpeg_opts = ffmpeg_pipeline.make_options_object(settings)
 
@@ -188,10 +190,9 @@ function plugin.execute()
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("completed"), nil)
     end
 
-    rio:save_status(rio_utils.get_status_name("completed"), nil)
-    rio:save_status(rio_utils.get_status_name("completed"), nil)
     rio:log_info("Registered: " .. tostring(proxy_path))
     rio:log_info("Registered: " .. tostring(thumbnail_path))
     rio:log_info("Registered: " .. tostring(sidecar_path))
+    rio:save_status(rio_utils.get_status_name("completed"), nil)
 
 end

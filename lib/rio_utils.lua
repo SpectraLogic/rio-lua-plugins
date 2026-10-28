@@ -474,6 +474,29 @@ local function get_status_name(name)
     return status_names[name:lower()] or "UNKNOWN"
 end
 
+--- Check that each required setting is present, failing the job with a single
+--- status message listing every missing key. Only nil and blank strings count as
+--- missing -- a boolean false is a real value, unlike a bare `if not settings.x`.
+--- Lookups are pcall-wrapped since settings can arrive as userdata (see describe_value).
+---@param settings table|userdata|nil
+---@param keys string[]
+---@return boolean ok  false when the job has been marked failed; the caller should return
+local function require_settings(settings, keys)
+    local missing = {}
+    for _, key in ipairs(keys) do
+        local ok, value = pcall(function() return settings and settings[key] end)
+        if not ok or value == nil or (type(value) == "string" and trim(value) == "") then
+            missing[#missing + 1] = key
+        end
+    end
+    if #missing > 0 then
+        rio:save_status(get_status_name("failure"),
+            "Missing required setting(s): " .. table.concat(missing, ", ") .. "; check configuration")
+        return false
+    end
+    return true
+end
+
 --- Pull "prefix1", "prefix2", ... values out of a flat metadata table into an ordered array.
 --- Shared by aws_pipeline and ollama_pipeline to read back ai_tagN / ai_celebrityN entries
 --- written by ffmpeg_pipeline.aggregate_frame_results.
@@ -522,6 +545,7 @@ end
 ---@field format_timestamp_for_filename fun(total_seconds: number): string # Seconds -> filename-safe `HH-MM-SS_mmm`.
 ---@field get_product_name fun(name: string): string # Normalize product name to enum.
 ---@field get_status_name fun(name: string): string # Normalize status name to enum.
+---@field require_settings fun(settings: table|userdata|nil, keys: string[]): boolean # Fail the job (one message listing all missing keys) if any setting is nil or blank; false means return.
 ---@field extract_indexed_values fun(metadata: table, prefix: string): string[] # Pull "prefix1", "prefix2", ... values out of a flat metadata table into an ordered array.
 
 return {
@@ -555,5 +579,6 @@ return {
     format_timestamp_for_filename = format_timestamp_for_filename,
     get_product_name = get_product_name,
     get_status_name = get_status_name,
+    require_settings = require_settings,
     extract_indexed_values = extract_indexed_values,
 }

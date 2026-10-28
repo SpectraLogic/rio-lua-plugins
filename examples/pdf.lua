@@ -27,6 +27,7 @@ function plugin.execute()
     ---@type MagickPipeline
     local magick_pipeline = require("magick_pipeline")
 
+    if not rio_utils.require_settings(settings, { "thumbnail_format", "preview_format" }) then return end
     local magick_settings = magick_pipeline.make_options_object(settings)
 
     local thumbnail_path = rio_utils.create_thumbnail_name(input, magick_settings.thumbnail_format, working_directory)
@@ -91,4 +92,6 @@ function plugin.execute()
     rio:save_status(rio_utils.get_status_name("completed"), nil)
     rio:log_info("Registered: " .. tostring(thumbnail_path))
     rio:log_info("Registered: " .. tostring(preview_path))
+    rio:save_status(rio_utils.get_status_name("completed"), nil)
+
 end

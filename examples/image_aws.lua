@@ -39,6 +39,9 @@ function plugin.execute()
     local magick_pipeline = require("magick_pipeline")
     local aws = require("aws_pipeline")
 
+    -- check required configuration
+    if not rio_utils.require_settings(settings, { "s3_bucket" }) then return end
+
     local magick_opts = magick_pipeline.make_options_object(settings)
     local aws_opts = aws.make_options_object(settings)
     local thumbnail_path = rio_utils.create_thumbnail_name(input, magick_opts.thumbnail_format, working_directory)
