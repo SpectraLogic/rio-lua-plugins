@@ -19,7 +19,6 @@ function plugin.schema()
       { key = "proxy_quality", type = "enum", default = "speech (64k mono)", choices = {"speech (64k mono)", "music (128k stereo)"}, label = "Audio Proxy Quality" },
       { key = "thumbnail_format", type = "enum",   default = "jpg",     choices ={"jpg", "webp", "png"},             label = "Thumbnail Format" },
       { key = "thumbnail_size", type = "enum",    default = "320x180", choices ={"320x180", "640x360", "1280x720"}, label = "Thumbnail Size" },
-      { key = "thumbnail_dpi",  type = "integer", default = 72,                                        label = "Thumbnail DPI" },
       -- Whisper transcription
       { key = "do_transcription",  type = "boolean", default = true,                                   label = "Enable Transcription" },
       { key = "model",    type = "string",    default = "C:\\Whisper\\models\\ggml-base.en.bin",       label = "Whisper Model Path" },
