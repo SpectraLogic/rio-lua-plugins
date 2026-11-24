@@ -32,6 +32,38 @@ function plugin.schema()
   })
 end
 
+--- Flatten aws.describe_image output into the flat string map save_ai_metadata
+--- ESCP-6510
+---@param description table
+---@return table<string,string>
+local function flatten_ai_metadata(description)
+    local flat = {}
+    local celebrity_names = {}
+    for i, name in ipairs(description.celebrities or {}) do
+        flat["ai_celebrity" .. i] = tostring(name)
+        celebrity_names[tostring(name):lower()] = true
+    end
+    local tag_index = 0
+    for _, tag in ipairs(description.tags or {}) do
+        if not celebrity_names[tostring(tag):lower()] then
+            tag_index = tag_index + 1
+            flat["ai_tag" .. tag_index] = tostring(tag)
+        end
+    end
+    for k, v in pairs(description) do
+        if k ~= "tags" and k ~= "celebrities" then
+            if type(v) == "table" then
+                for i, item in ipairs(v) do
+                    flat["ai_" .. k .. i] = tostring(item)
+                end
+            elseif v ~= nil then
+                flat["ai_" .. k] = tostring(v)
+            end
+        end
+    end
+    return flat
+end
+
 function plugin.execute()
     ---@type RioUtils
     local rio_utils = require("rio_utils")
@@ -111,11 +143,11 @@ function plugin.execute()
         rio:save_status(rio_utils.get_status_name("failure"), tostring(description_err))
         return
     else
-        rio:log_debug("AI description: " .. json.encode(description, { indent = true }))
-        rio:save_ai_metadata(description)
+        local ai_metadata = flatten_ai_metadata(description)
+        rio:log_debug("AI description: " .. json.encode(ai_metadata, { indent = true }))
+        rio:save_ai_metadata(ai_metadata)
         rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("completed"), nil)
     end
 
     rio:save_status(rio_utils.get_status_name("completed"), nil)
 end
- 
