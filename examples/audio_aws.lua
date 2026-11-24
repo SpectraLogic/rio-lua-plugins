@@ -152,6 +152,8 @@ function plugin.execute()
         else
             rio:log_warn("Failed to generate AWS summary: " .. tostring(summary_err))
             rio:product_status(rio_utils.get_product_name("ai"), rio_utils.get_status_name("failure"), tostring(summary_err))
+            rio:save_status(rio_utils.get_status_name("failure"), tostring(summary_err))
+            return
         end
     end
 
